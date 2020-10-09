@@ -220,10 +220,10 @@ data MetadataEffect r where
 makeEffect ''MetadataEffect
 
 ------------------------------------------------------------
-data MetadataError
+newtype MetadataError
     = MetadataClientError ClientError
     deriving (Show, Eq, Generic)
-    deriving anyclass (ToJSON, FromJSON)
+    deriving newtype (ToJSON, FromJSON)
 
 data MetadataLogMessage
     = FetchingSubject Subject

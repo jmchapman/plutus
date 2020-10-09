@@ -66,7 +66,7 @@ webserverCommandParser =
         pure Webserver {..}
 
 runCommand :: MonadIO m => FilePath -> Command -> m ()
-runCommand _ Webserver {..} = do
+runCommand _ Webserver {..} =
     liftIO $ Webserver.run _port
 runCommand _ PSGenerator {..} = liftIO $ PSGenerator.generate _outputDir
 
