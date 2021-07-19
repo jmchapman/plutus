@@ -188,3 +188,67 @@ decUTm (UDelay t) (UDelay t') = decUTm t t'
 decUTm (UForce t) (UForce t') = decUTm t t'
 decUTm _ _ = false
 ```
+
+```
+-- look for a variable
+FV : Fin n → n ⊢ → Bool
+FV i (` x) with i Data.Fin.≟ x
+... | yes p = true
+... | no ¬p = false
+FV i (ƛ t) = FV (suc i) t
+FV i (t · u) = FV i t ∨ FV i u
+FV i (force t) = FV i t
+FV i (delay t) = FV i t
+FV i (con c) = false
+FV i (builtin b) = false
+FV i error = false
+
+-- two things, look under a binder and strengthen if we don't find 0
+-- if we find a constant function in an application, swap it for a force/delay.
+
+
+-- can we delete the zero variable from the context?
+thick : ∀{n}(x y : Fin (suc n)) → Maybe (Fin n)
+thick zero zero = nothing
+thick zero (suc y) = just y
+thick {suc n} (suc x) zero = just zero
+thick {suc n} (suc x) (suc y) with thick x y
+... | nothing = nothing
+... | just y' = just (suc y')
+
+check : ∀{n} → Fin (suc n) → suc n ⊢ → Maybe (n ⊢)
+check i (` x) with thick i x
+... | just x'  = just (` x')
+... | nothing = nothing
+check i (ƛ t) with check (suc i) t
+... | just t' = just (ƛ t')
+... | nothing = nothing
+check i (t · u) with check i t
+... | nothing = nothing
+... | just t' with check i u
+... | nothing = nothing
+... | just u' = just (t' · u')
+check i (force t) with check i t
+... | nothing = nothing
+... | just t' = just (force t')
+check i (delay t) with check i t
+... | nothing = nothing
+... | just t' = just (delay t')
+check i (con c)     = just (con c)
+check i (builtin b) = just (builtin b)
+check i error       = just error
+
+{-# TERMINATING #-}
+chomp : ∀{n} → n ⊢ → n ⊢
+chomp (` x) = ` x
+chomp (ƛ t) = ƛ (chomp t)
+chomp (ƛ t · u) with check zero t
+... | nothing = ƛ (chomp t) · chomp u
+... | just t' = force (delay (chomp t'))
+chomp (t   · u) = chomp t · chomp u
+chomp (force t) = force (chomp t)
+chomp (delay t) = delay (chomp t)
+chomp (con c) = con c
+chomp (builtin b) = builtin b
+chomp error = error
+```
