@@ -16,13 +16,14 @@ import           Data.Bits
 import           Data.Csv
 import           Data.Primitive             (Prim)
 import           GHC.Base
+import           GHC.Generics
 import           GHC.Num
 import           GHC.Real
 import           Language.Haskell.TH.Syntax (Lift)
 
 newtype SatInt = SI { unSatInt :: Int }
     deriving newtype (NFData, Bits, FiniteBits, Prim)
-    deriving Lift
+    deriving stock (Lift, Generic)
     deriving (FromJSON, ToJSON) via Int
     deriving FromField via Int  -- For reading cost model data from CSV input
 
@@ -214,32 +215,42 @@ instance Integral SatInt where
 
     SI a `quot` SI b
      | b == 0                     = divZeroError
-     | a == minBound && b == (-1) = minBound
+     -- a/-1 = -a, -minBound = maxBound
+     -- We can't just fall though since `quotInt` would overflow instead
+     | a == minBound && b == (-1) = maxBound
      | otherwise                  = SI (a `quotInt` b)
 
     SI a `rem` SI b
      | b == 0                     = divZeroError
-     | a == minBound && b == (-1) = minBound
+     -- a/-1 = -a, with no remainder
+     -- We can't just fall though since `remInt` would overflow instead
+     | a == minBound && b == (-1) = 0
      | otherwise                  = SI (a `remInt` b)
 
     SI a `div` SI b
      | b == 0                     = divZeroError
-     | a == minBound && b == (-1) = minBound
+     -- a/-1 = -a, -minBound = maxBound
+     -- We can't just fall though since `divInt` would overflow instead
+     | a == minBound && b == (-1) = maxBound
      | otherwise                  = SI (a `divInt` b)
 
     SI a `mod` SI b
      | b == 0                     = divZeroError
-     | a == minBound && b == (-1) = minBound
+     -- a/-1 = -a, with no remainder
+     -- We can't just fall though since `modInt` would overflow instead
+     | a == minBound && b == (-1) = 0
      | otherwise                  = SI (a `modInt` b)
 
     SI a `quotRem` SI b
      | b == 0                     = divZeroError
-     | a == minBound && b == (-1) = minBound
+     -- See cases for `quot` and `rem`
+     | a == minBound && b == (-1) = (maxBound, 0)
      | otherwise                  =  a `quotRemSI` b
 
     SI a `divMod` SI b
      | b == 0                     = divZeroError
-     | a == minBound && b == (-1) = minBound
+     -- See cases for `div` and `mod`
+     | a == minBound && b == (-1) = (maxBound, 0)
      | otherwise                  =  a `divModSI` b
 
 quotRemSI :: Int -> Int -> (SatInt, SatInt)
@@ -321,14 +332,4 @@ productSI l       = prod l 1
 {-# RULES
   "sum/SatInt"          sum = sumSI;
   "product/SatInt"      product = productSI
-  #-}
-
-lcmSI :: SatInt -> SatInt -> SatInt
-lcmSI _      (SI 0) =  SI 0
-lcmSI (SI 0) _      =  SI 0
-lcmSI (SI x) (SI y) =  abs (SI (x `quot` (gcd x y)) * SI y)
-
-{-# RULES
-  "lcm/SatInt"          lcm = lcmSI;
-  "gcd/SatInt"          gcd = \ (SI a) (SI b) -> SI (gcd a b)
   #-}

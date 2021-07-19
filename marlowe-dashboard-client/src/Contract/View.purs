@@ -1,15 +1,15 @@
 module Contract.View
-  ( contractDetailsCard
+  ( contractCard
+  , contractScreen
   , actionConfirmationCard
   ) where
 
 import Prelude hiding (div)
-import Contract.Lenses (_executionState, _metadata, _namedActions, _participants, _pendingTransaction, _previousSteps, _selectedStep, _tab, _userParties)
+import Contract.Lenses (_executionState, _metadata, _namedActions, _nickname, _participants, _pendingTransaction, _previousSteps, _selectedStep, _tab, _userParties)
 import Contract.State (currentStep, isContractClosed)
 import Contract.Types (Action(..), PreviousStep, PreviousStepState(..), State, Tab(..), scrollContainerRef)
-import Css (applyWhen, classNames, toggleWhen)
 import Css as Css
-import Data.Array (foldr, intercalate)
+import Data.Array (foldr, intercalate, length)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NonEmptyArray
@@ -21,33 +21,101 @@ import Data.Map (keys, lookup, toUnfoldable) as Map
 import Data.Maybe (Maybe(..), isJust, maybe, maybe')
 import Data.Set (Set)
 import Data.Set as Set
-import Data.String as String
+import Data.String (take, trim)
 import Data.String.Extra (capitalize)
 import Data.Tuple (Tuple(..), fst, uncurry)
 import Data.Tuple.Nested ((/\))
+import Effect.Aff.Class (class MonadAff)
+import Halogen (ComponentHTML)
+import Halogen.Css (applyWhen, classNames)
 import Halogen.Extra (lifeCycleEvent)
-import Halogen.HTML (HTML, a, button, div, div_, h1, h2, h3, input, p, span, span_, sup_, text)
+import Halogen.HTML (HTML, a, button, div, div_, h2, h3, input, p, span, span_, sup_, text)
 import Halogen.HTML.Events.Extra (onClick_, onValueInput_)
 import Halogen.HTML.Properties (InputType(..), enabled, href, placeholder, ref, target, type_, value)
-import Humanize (formatDate, formatTime, humanizeDuration, humanizeInterval, humanizeValue)
-import Marlowe.Execution.Lenses (_currentState, _mNextTimeout)
+import Humanize (contractIcon, formatDate, formatTime, humanizeDuration, humanizeInterval, humanizeValue)
+import LoadingSubmitButton.State (loadingSubmitButton)
+import LoadingSubmitButton.Types (Message(..))
+import MainFrame.Types (ChildSlots)
+import Marlowe.Execution.Lenses (_semanticState, _mNextTimeout)
 import Marlowe.Execution.State (expandBalances, getActionParticipant)
 import Marlowe.Execution.Types (NamedAction(..))
 import Marlowe.Extended (contractTypeName)
+import Marlowe.Extended.Metadata (_contractType)
 import Marlowe.PAB (transactionFee)
 import Marlowe.Semantics (Accounts, Assets, Bound(..), ChoiceId(..), Input(..), Party(..), Slot, SlotInterval, Token, TransactionInput(..), getEncompassBound)
 import Marlowe.Slot (secondsDiff, slotToDateTime)
-import Material.Icons (Icon(..), icon)
+import Material.Icons (Icon(..)) as Icon
+import Material.Icons (Icon, icon)
 import WalletData.State (adaToken, getAda)
+
+contractCard :: forall p. Slot -> State -> HTML p Action
+contractCard currentSlot state =
+  let
+    currentStepNumber = (currentStep state) + 1
+
+    nickname = state ^. _nickname
+
+    contractType = state ^. (_metadata <<< _contractType)
+  in
+    div
+      [ classNames [ "shadow", "bg-white", "rounded" ] ]
+      [ div
+          [ classNames [ "flex", "gap-2", "px-4", "py-2", "border-gray", "border-b" ] ]
+          [ div
+              [ classNames [ "flex-1" ] ]
+              [ h3
+                  [ classNames [ "flex", "gap-2", "items-center" ] ]
+                  [ contractIcon contractType
+                  , text $ contractTypeName contractType
+                  ]
+              , input
+                  [ classNames $ Css.inputNoBorder <> [ "-ml-2", "text-lg" ]
+                  , type_ InputText
+                  , value nickname
+                  , onValueInput_ SetNickname
+                  , placeholder "Please rename"
+                  ]
+              ]
+          , a
+              [ classNames [ "flex", "items-center" ]
+              , onClick_ SelectSelf
+              ]
+              [ icon Icon.ArrowRight [ "text-28px" ] ]
+          ]
+      , div
+          [ classNames [ "px-4", "py-2", "border-gray", "border-b" ] ]
+          [ p
+              [ classNames [ "text-sm", "font-semibold" ] ]
+              [ text $ "Current step:" <> show currentStepNumber ]
+          , p
+              [ classNames [ "font-semibold" ] ]
+              [ text $ timeoutString currentSlot state ]
+          ]
+      , div
+          [ classNames [ "h-dashboard-card-actions", "overflow-y-auto" ] ]
+          [ currentStepActions currentSlot state ]
+      ]
+
+timeoutString :: Slot -> State -> String
+timeoutString currentSlot state =
+  let
+    mNextTimeout = state ^. (_executionState <<< _mNextTimeout)
+  in
+    maybe'
+      (\_ -> if isContractClosed state then "Contract closed" else "Timed out")
+      (\nextTimeout -> humanizeDuration $ secondsDiff nextTimeout currentSlot)
+      mNextTimeout
 
 -- NOTE: Currently, the horizontal scrolling for this element does not match the exact desing. In the designs, the active card is always centered and you
 -- can change which card is active via scrolling or the navigation buttons. To implement this we would probably need to add snap scrolling to the center of the
 -- big container and create a smaller absolute positioned element of the size of a card (positioned in the middle), and with JS check that if a card enters
 -- that "viewport", then we make that the selected element.
 -- Current implementation just hides non active elements in mobile and makes a simple x-scrolling for larger devices.
-contractDetailsCard :: forall p. Slot -> State -> HTML p Action
-contractDetailsCard currentSlot state =
+contractScreen :: forall p. Slot -> State -> HTML p Action
+contractScreen currentSlot state =
   let
+    nickname = state ^. _nickname
+
     metadata = state ^. _metadata
 
     pastStepsCards = mapWithIndex (renderPastStep state) (state ^. _previousSteps)
@@ -63,16 +131,21 @@ contractDetailsCard currentSlot state =
   in
     div
       [ classNames [ "flex", "flex-col", "items-center", "pt-5", "h-full" ]
-      , lifeCycleEvent { onInit: Just CarouselOpened, onFinilize: Just CarouselClosed }
+      , lifeCycleEvent { onInit: Just CarouselOpened, onFinalize: Just CarouselClosed }
       ]
-      [ h1 [ classNames [ "text-xl", "font-semibold" ] ] [ text metadata.contractName ]
+      [ input
+          [ classNames [ "text-xl", "font-semibold", "text-center", "bg-transparent" ]
+          , placeholder "Please rename"
+          , value nickname
+          , onValueInput_ SetNickname
+          ]
       , h2 [ classNames [ "mb-5", "text-xs", "uppercase" ] ] [ text $ contractTypeName metadata.contractType ]
       -- NOTE: The card is allowed to grow in an h-full container and the navigation buttons are absolute positioned
       --       because the cards x-scrolling can't coexist with a visible y-overflow. To avoid clipping the cards shadow
       --       we need the cards container to grow (hence the flex-grow).
       , div [ classNames [ "flex-grow", "w-full" ] ]
           [ div
-              [ classNames [ "flex", "overflow-x-scroll", "h-full", "scrollbar-width-none", "relative" ]
+              [ classNames [ "flex", "items-center", "overflow-x-scroll", "h-full", "scrollbar-width-none", "relative" ]
               , ref scrollContainerRef
               ]
               (paddingElement <> pastStepsCards <> currentStepCard <> paddingElement)
@@ -94,7 +167,7 @@ cardNavigationButtons state =
               [ classNames [ "text-purple" ]
               , onClick_ $ MoveToStep $ selectedStep - 1
               ]
-              [ icon ArrowLeft [ "text-2xl", "py-4" ] ]
+              [ icon Icon.ArrowLeft [ "text-2xl", "py-4" ] ]
       | otherwise = Nothing
 
     rightButton selectedStep
@@ -107,20 +180,26 @@ cardNavigationButtons state =
       | otherwise =
         Just
           $ button
-              [ classNames $ Css.primaryButton <> [ "ml-auto" ] <> Css.withIcon ArrowRight
+              [ classNames $ Css.primaryButton <> [ "ml-auto" ] <> Css.withIcon Icon.ArrowRight
               , onClick_ $ MoveToStep $ selectedStep + 1
               ]
               [ text "Next" ]
   in
-    div [ classNames [ "absolute", "bottom-6", "flex", "items-center", "w-full", "px-6", "md:px-5pc" ] ]
+    div [ classNames [ "mb-6", "flex", "items-center", "w-full", "px-6" ] ]
       $ Array.catMaybes
           [ leftButton (state ^. _selectedStep)
           , rightButton (state ^. _selectedStep)
           ]
 
 -- TODO: This is a lot like the `contractSetupConfirmationCard` in `Template.View`. Consider factoring out a shared component.
-actionConfirmationCard :: forall p. Assets -> State -> NamedAction -> HTML p Action
-actionConfirmationCard assets state namedAction =
+actionConfirmationCard ::
+  forall m.
+  MonadAff m =>
+  Assets ->
+  NamedAction ->
+  State ->
+  ComponentHTML Action ChildSlots m
+actionConfirmationCard assets namedAction state =
   let
     stepNumber = currentStep state
 
@@ -189,12 +268,16 @@ actionConfirmationCard assets state namedAction =
                   , onClick_ CancelConfirmation
                   ]
                   [ text "Cancel" ]
-              , button
-                  [ classNames $ Css.primaryButton <> [ "flex-1" ]
-                  , onClick_ $ ConfirmAction namedAction
-                  , enabled hasSufficientFunds
-                  ]
-                  [ text cta ]
+              , loadingSubmitButton
+                  { ref: "action-confirm-button"
+                  , caption: cta
+                  , styles: [ "flex-1" ]
+                  , enabled: hasSufficientFunds
+                  , handler:
+                      \msg -> case msg of
+                        OnSubmit -> Just $ ConfirmAction namedAction
+                        _ -> Nothing
+                  }
               ]
           , div
               [ classNames [ "my-4", "text-sm", "text-red" ] ]
@@ -215,7 +298,7 @@ actionConfirmationCard assets state namedAction =
                       , target "_blank"
                       ]
                       [ text "Read more in Docs" ]
-                  , icon ArrowRight [ "text-2xl" ]
+                  , icon Icon.ArrowRight [ "text-2xl" ]
                   ]
               ]
           ]
@@ -236,10 +319,11 @@ renderContractCard stepNumber state currentTab cardBody =
       --       so the perceived margins are bigger than we'd want to. To solve this we add negative margin of 4
       --       to the "not selected" cards, a positive margin of 2 to the selected one
       -- Base classes
-      [ "grid", "grid-rows-contract-step-card", "rounded", "overflow-hidden", "flex-shrink-0", "w-contract-card", "h-contract-card", "transform", "transition-transform", "duration-100", "ease-out" ]
-        <> toggleWhen (state ^. _selectedStep /= stepNumber)
+      [ "grid", "grid-rows-auto-1fr", "rounded", "overflow-hidden", "flex-shrink-0", "w-contract-card", "h-contract-card", "transform", "transition-transform", "duration-100", "ease-out" ]
+        <> if (state ^. _selectedStep /= stepNumber) then
             -- Not selected card modifiers
             [ "shadow", "scale-77", "-mx-4" ]
+          else
             -- Selected card modifiers
             [ "shadow-lg", "mx-2" ]
   in
@@ -256,7 +340,7 @@ renderContractCard stepNumber state currentTab cardBody =
               ]
               [ span_ $ [ text "Balances" ] ]
           ]
-      , div [ classNames [ "bg-white", "grid", "grid-rows-contract-step-card" ] ] cardBody
+      , div [ classNames [ "bg-white", "grid", "grid-rows-auto-1fr" ] ] cardBody
       ]
 
 statusIndicator :: forall p a. Maybe Icon -> String -> Array String -> HTML p a
@@ -285,8 +369,8 @@ renderPastStep state stepNumber step =
               [ classNames [ "text-xl", "font-semibold", "flex-grow" ] ]
               [ text $ "Step " <> show (stepNumber + 1) ]
           , case step.state of
-              TimeoutStep _ -> statusIndicator (Just Timer) "Timed out" [ "bg-red", "text-white" ]
-              TransactionStep _ -> statusIndicator (Just Done) "Completed" [ "bg-green", "text-white" ]
+              TimeoutStep _ -> statusIndicator (Just Icon.Timer) "Timed out" [ "bg-red", "text-white" ]
+              TransactionStep _ -> statusIndicator (Just Icon.Done) "Completed" [ "bg-green", "text-white" ]
           ]
       , div [ classNames [ "overflow-y-auto", "px-4" ] ]
           [ renderBody currentTab step
@@ -382,7 +466,7 @@ renderTimeout stepNumber timeoutSlot =
     div [ classNames [ "flex", "flex-col", "items-center" ] ]
       -- NOTE: we use pt-16 instead of making the parent justify-center because in the design it's not actually
       --       centered and it has more space above than below.
-      [ icon Timer [ "pb-2", "pt-16", "text-red", "text-big-icon" ]
+      [ icon Icon.Timer [ "pb-2", "pt-16", "text-red", "text-big-icon" ]
       , span [ classNames [ "font-semibold", "text-center", "text-sm" ] ]
           [ text $ "Step " <> show (stepNumber + 1) <> " timed out on " <> timedOutDate ]
       ]
@@ -399,17 +483,6 @@ renderCurrentStep currentSlot state =
     contractIsClosed = isContractClosed state
 
     mNextTimeout = state ^. (_executionState <<< _mNextTimeout)
-
-    participants = state ^. _participants
-
-    currentState = state ^. (_executionState <<< _currentState)
-
-    balances = expandBalances (Set.toUnfoldable $ Map.keys participants) [ adaToken ] currentState
-
-    timeoutStr =
-      maybe "timed out"
-        (\nextTimeout -> humanizeDuration $ secondsDiff nextTimeout currentSlot)
-        mNextTimeout
   in
     renderContractCard stepNumber state currentTab
       [ div [ classNames [ "py-2.5", "px-4", "flex", "items-center", "border-b", "border-lightgray" ] ]
@@ -419,25 +492,41 @@ renderCurrentStep currentSlot state =
           , case contractIsClosed, isJust pendingTransaction of
               true, _ -> statusIndicator Nothing "Contract closed" [ "bg-lightgray" ]
               _, true -> statusIndicator Nothing "Awaiting confirmation" [ "bg-lightgray" ]
-              _, _ -> statusIndicator (Just Timer) timeoutStr [ "bg-lightgray" ]
+              _, _ -> statusIndicator (Just Icon.Timer) (timeoutString currentSlot state) [ "bg-lightgray" ]
           ]
-      , div [ classNames [ "overflow-y-auto", "px-4" ] ]
-          [ case currentTab, contractIsClosed, isJust pendingTransaction of
-              Tasks, true, _ -> renderContractClose
-              Tasks, _, true -> renderPendingStep
-              Tasks, _, _ -> renderTasks state
-              Balances, _, _ -> renderBalances state balances
-          ]
+      , div
+          [ classNames [ "overflow-y-auto" ] ]
+          [ currentStepActions currentSlot state ]
       ]
+
+currentStepActions :: forall p. Slot -> State -> HTML p Action
+currentStepActions currentSlot state =
+  let
+    currentTab = state ^. _tab
+
+    pendingTransaction = state ^. _pendingTransaction
+
+    participants = state ^. _participants
+
+    semanticState = state ^. (_executionState <<< _semanticState)
+
+    balances = expandBalances (Set.toUnfoldable $ Map.keys participants) [ adaToken ] semanticState
+  in
+    case currentTab, isContractClosed state, isJust pendingTransaction of
+      Tasks, true, _ -> renderContractClose
+      Tasks, _, true -> renderPendingStep
+      Tasks, _, _ -> renderTasks state
+      Balances, _, _ -> renderBalances state balances
 
 renderContractClose :: forall p a. HTML p a
 renderContractClose =
-  div [ classNames [ "flex", "flex-col", "items-center" ] ]
-    -- NOTE: we use pt-16 instead of making the parent justify-center because in the design it's not actually
-    --       centered and it has more space above than below.
-    [ icon TaskAlt [ "pb-2", "pt-16", "text-green", "text-big-icon" ]
+  div [ classNames [ "h-full", "flex", "flex-col", "justify-center", "items-center", "p-4" ] ]
+    [ icon Icon.TaskAlt [ "text-green", "text-big-icon" ]
     , div
-        [ classNames [ "text-center", "text-sm" ] ]
+        -- The bottom margin on this div means the whole thing isn't perfectly centered vertically.
+        -- Because there's an image on top and text below, being perfectly centered vertically
+        -- looks wrong.
+        [ classNames [ "text-center", "text-sm", "mb-4" ] ]
         [ div [ classNames [ "font-semibold" ] ]
             [ text "This contract is now closed" ]
         , div_ [ text "There are no tasks to complete" ]
@@ -448,7 +537,7 @@ renderContractClose =
 -- the past step card)
 renderPendingStep :: forall p a. HTML p a
 renderPendingStep =
-  div [ classNames [ "mt-4" ] ]
+  div [ classNames [ "px-4", "mt-4" ] ]
     [ text "Your transaction has been submitted. You will be notified when confirmation is received." ]
 
 -- This helper function expands actions that can be taken by anybody,
@@ -500,7 +589,15 @@ renderTasks state =
         (Map.keys $ state ^. _participants)
         actions
   in
-    div [ classNames [ "pb-4" ] ] $ expandedActions <#> uncurry (renderPartyTasks state)
+    if length expandedActions > 0 then
+      div
+        [ classNames [ "px-4", "pb-4" ] ]
+        $ expandedActions
+        <#> uncurry (renderPartyTasks state)
+    else
+      div
+        [ classNames [ "p-4" ] ]
+        [ text "There are no tasks to perform at this step. The contract will progress automatically when the timeout has passed." ]
 
 participantWithNickname :: State -> Party -> String
 participantWithNickname state party =
@@ -523,7 +620,7 @@ renderParty state party =
   in
     -- FIXME: mb-2 should not belong here
     div [ classNames [ "text-xs", "flex", "mb-2" ] ]
-      [ div [ classNames [ "bg-gradient-to-r", "from-purple", "to-lightpurple", "text-white", "rounded-full", "w-5", "h-5", "text-center", "mr-1", "font-semibold" ] ] [ text $ String.take 1 participantName ]
+      [ div [ classNames [ "bg-gradient-to-r", "from-purple", "to-lightpurple", "text-white", "rounded-full", "w-5", "h-5", "text-center", "mr-1", "font-semibold" ] ] [ text $ take 1 participantName ]
       , div [ classNames [ "font-semibold" ] ] [ text participantName ]
       ]
 
@@ -574,7 +671,7 @@ renderAction state party namedAction@(MakeDeposit intoAccountOf by token value) 
     div_
       [ shortDescription isActiveParticipant description
       , button
-          [ classNames $ Css.button <> [ "flex", "justify-between", "w-full", "mt-2" ]
+          [ classNames $ Css.button <> Css.withAnimation <> [ "flex", "justify-between", "w-full", "mt-2" ]
               <> if isActiveParticipant || debugMode then
                   Css.bgBlueGradient <> Css.withShadow
                 else
@@ -602,9 +699,10 @@ renderAction state party namedAction@(MakeChoice choiceId bounds mChosenNum) =
 
     ChoiceId choiceIdKey _ = choiceId
 
-    choiceDescription = case Map.lookup choiceIdKey metadata.choiceDescriptions of
-      Nothing -> div_ []
-      Just description -> shortDescription isActiveParticipant description
+    choiceDescription = case Map.lookup choiceIdKey metadata.choiceInfo of
+      Just { choiceDescription: description }
+        | trim description /= "" -> shortDescription isActiveParticipant description
+      _ -> div_ []
 
     isValid = maybe false (between minBound maxBound) mChosenNum
 
@@ -647,7 +745,7 @@ renderAction state party namedAction@(MakeChoice choiceId bounds mChosenNum) =
 
     singleInput = \_ ->
       button
-        [ classNames $ Css.button <> [ "w-full", "mt-2" ]
+        [ classNames $ Css.button <> Css.withAnimation <> [ "w-full", "mt-2" ]
             <> if isActiveParticipant || debugMode then
                 Css.bgBlueGradient <> Css.withShadow
               else
@@ -681,7 +779,7 @@ renderAction state party CloseContract =
       [ shortDescription isActiveParticipant "The contract is still open and needs to be manually closed by any participant for the remainder of the balances to be distributed (charges may apply)"
       , button
           -- TODO: adapt to use button classes from Css module
-          [ classNames $ Css.button <> [ "w-full", "mt-2" ]
+          [ classNames $ Css.button <> Css.withAnimation <> [ "w-full", "mt-2" ]
               <> if isActiveParticipant || debugMode then
                   Css.bgBlueGradient <> Css.withShadow
                 else

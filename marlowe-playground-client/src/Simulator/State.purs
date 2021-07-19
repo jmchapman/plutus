@@ -7,9 +7,11 @@ module Simulator.State
   , emptyMarloweState
   , startSimulation
   , updateChoice
+  , getAllActions
   ) where
 
 import Prelude
+import Control.Bind (bindFlipped)
 import Control.Monad.State (class MonadState)
 import Data.Array (fromFoldable, mapMaybe, snoc, sort, toUnfoldable, uncons)
 import Data.FoldableWithIndex (foldlWithIndex)
@@ -25,7 +27,7 @@ import Data.Newtype (unwrap, wrap)
 import Data.NonEmpty (foldl1, (:|))
 import Data.NonEmptyList.Extra (extendWith)
 import Data.NonEmptyList.Lens (_Tail)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), snd)
 import Data.Tuple.Nested ((/\))
 import Marlowe.Holes (Contract(..), Term(..), TransactionOutput(..), computeTransaction, fromTerm, reduceContractUntilQuiescent)
 import Marlowe.Holes as T
@@ -33,7 +35,7 @@ import Marlowe.Semantics (Action(..), Bound(..), ChoiceId(..), ChosenNum, Enviro
 import Marlowe.Semantics as S
 import Marlowe.Template (getPlaceholderIds, initializeTemplateContent)
 import Simulator.Lenses (_SimulationRunning, _contract, _currentMarloweState, _executionState, _log, _marloweState, _moneyInContract, _moveToAction, _pendingInputs, _possibleActions, _slot, _state, _transactionError, _transactionWarnings)
-import Simulator.Types (ActionInput(..), ActionInputId(..), ExecutionState(..), ExecutionStateRecord, MarloweEvent(..), MarloweState, Parties(..), otherActionsParty)
+import Simulator.Types (ActionInput(..), ActionInputId(..), ExecutionState(..), ExecutionStateRecord, LogEntry(..), MarloweState, Parties(..), otherActionsParty)
 
 emptyExecutionStateWithSlot :: Slot -> Term T.Contract -> ExecutionState
 emptyExecutionStateWithSlot sn cont =
@@ -208,12 +210,17 @@ applyPendingInputs oldState@{ executionState: SimulationRunning executionState }
   newState = case computeTransaction txInput (executionState ^. _state) (executionState ^. _contract) of
     TransactionOutput { txOutWarnings, txOutPayments, txOutState, txOutContract } ->
       let
+        mContractCloseLog = case txOutContract of
+          Term Close _ -> over _log (append [ CloseEvent txIn.interval ])
+          _ -> identity
+
         newExecutionState =
           ( set _transactionError Nothing
-              <<< set _transactionWarnings (fromFoldable txOutWarnings)
+              <<< over _transactionWarnings (flip append $ fromFoldable txOutWarnings)
               <<< set _pendingInputs mempty
               <<< set _state txOutState
               <<< set _moneyInContract (moneyInContract txOutState)
+              <<< mContractCloseLog
               <<< over _log (append (fromFoldable (map (OutputEvent txIn.interval) txOutPayments)))
               <<< over _log (append [ InputEvent txInput ])
           )
@@ -298,14 +305,19 @@ startSimulation ::
   Term Contract ->
   m Unit
 startSimulation initialSlot contract =
-  updateMarloweState
-    ( {- This code was taken/adapted from the SimulationPage, we should revisit if applyPendingInputs is necesary
+  let
+    initialExecutionState =
+      emptyExecutionStateWithSlot initialSlot contract
+        # over (_SimulationRunning <<< _log) (append [ StartEvent initialSlot ])
+  in
+    updateMarloweState
+      ( {- This code was taken/adapted from the SimulationPage, we should revisit if applyPendingInputs is necesary
       when we are starting a simulation, as there should not be any prior pending input. The only reason
       that I think it might be useful is if the contract starts with something other than a When clause.
       TODO: revisit this
       -} applyPendingInputs
-        <<< (set _executionState (emptyExecutionStateWithSlot initialSlot contract))
-    )
+          <<< (set _executionState initialExecutionState)
+      )
 
 moveToSlot ::
   forall s m.
@@ -351,3 +363,9 @@ nextTimeout state = do
 
 mapPartiesActionInput :: (ActionInput -> ActionInput) -> Parties -> Parties
 mapPartiesActionInput f (Parties m) = Parties $ (map <<< map) f m
+
+getAllActions :: Parties -> Array ActionInput
+getAllActions (Parties p) =
+  Map.toUnfoldable p
+    # map snd
+    # bindFlipped (map snd <<< Map.toUnfoldable)

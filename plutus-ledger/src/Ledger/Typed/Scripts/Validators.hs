@@ -10,7 +10,7 @@
 {-# OPTIONS_GHC -fno-strictness #-}
 {-# OPTIONS_GHC -Wno-simplifiable-class-constraints #-}
 {-# OPTIONS_GHC -fno-omit-interface-pragmas #-}
-module Ledger.Typed.Scripts.Validators where
+module Ledger.Typed.Scripts.Validators (ValidatorTypes(..), ValidatorType, WrappedValidatorType, wrapValidator, TypedValidator, mkTypedValidator, mkTypedValidatorParam, validatorHash, validatorAddress, validatorScript, unsafeMkTypedValidator, forwardingMintingPolicy, forwardingMintingPolicyHash) where
 
 import           Data.Aeson                            (FromJSON, ToJSON)
 import           Data.Kind
@@ -23,10 +23,10 @@ import           PlutusTx.Prelude                      (check)
 
 import           Plutus.V1.Ledger.Address              (Address (..), scriptHashAddress)
 import qualified Plutus.V1.Ledger.Contexts             as Validation
-import           Plutus.V1.Ledger.Scripts
 import qualified Plutus.V1.Ledger.Scripts              as Scripts
 
 import qualified Ledger.Typed.Scripts.MonetaryPolicies as MPS
+import           Ledger.Typed.TypeUtils                (Any)
 
 -- | A class that associates a type standing for a connection type with two types, the type of the redeemer
 -- and the data script for that connection type.
@@ -47,11 +47,9 @@ instance ValidatorTypes Void where
     type RedeemerType Void = Void
     type DatumType Void = Void
 
-data Any
-
 instance ValidatorTypes Any where
-    type RedeemerType Any = Data
-    type DatumType Any = Data
+    type RedeemerType Any = BuiltinData
+    type DatumType Any = BuiltinData
 
 {- Note [Scripts returning Bool]
 It used to be that the signal for validation failure was a script being `error`. This is nice for the validator, since
@@ -67,7 +65,7 @@ to the previous problem: apply a function which does a pattern match and returns
 otherwise. Then, as before, we just check for error in the overall evaluation.
 -}
 
-type WrappedValidatorType = Data -> Data -> Data -> ()
+type WrappedValidatorType = BuiltinData -> BuiltinData -> BuiltinData -> ()
 
 {-# INLINABLE wrapValidator #-}
 wrapValidator
@@ -75,17 +73,17 @@ wrapValidator
     . (IsData d, IsData r)
     => (d -> r -> Validation.ScriptContext -> Bool)
     -> WrappedValidatorType
-wrapValidator f (fromData -> Just d) (fromData -> Just r) (fromData -> Just p) = check $ f d r p
-wrapValidator _ _ _ _                                                          = check False
+-- We can use unsafeFromBuiltinData here as we would fail immediately anyway if parsing failed
+wrapValidator f d r p = check $ f (unsafeFromBuiltinData d) (unsafeFromBuiltinData r) (unsafeFromBuiltinData p)
 
 -- | A typed validator script with its 'ValidatorScript' and 'Address'.
 data TypedValidator (a :: Type) =
     TypedValidator
-        { tvValidator         :: Validator
-        , tvValidatorHash     :: ValidatorHash
-        , tvForwardingMPS     :: MonetaryPolicy
-        , tvForwardingMPSHash :: MonetaryPolicyHash
-        -- ^ The hash of the monetary policy that checks whether the validator
+        { tvValidator         :: Scripts.Validator
+        , tvValidatorHash     :: Scripts.ValidatorHash
+        , tvForwardingMPS     :: Scripts.MintingPolicy
+        , tvForwardingMPSHash :: Scripts.MintingPolicyHash
+        -- ^ The hash of the minting policy that checks whether the validator
         --   is run in this transaction
         }
     deriving stock (Show, Eq, Generic)
@@ -99,14 +97,14 @@ mkTypedValidator ::
     -- ^ A wrapper for the compiled validator
     -> TypedValidator a
 mkTypedValidator vc wrapper =
-    let val = mkValidatorScript $ wrapper `applyCode` vc
+    let val = Scripts.mkValidatorScript $ wrapper `applyCode` vc
         hsh = Scripts.validatorHash val
-        mps = MPS.mkForwardingMonetaryPolicy hsh
+        mps = MPS.mkForwardingMintingPolicy hsh
     in TypedValidator
         { tvValidator         = val
         , tvValidatorHash     = hsh
         , tvForwardingMPS     = mps
-        , tvForwardingMPSHash = Scripts.monetaryPolicyHash mps
+        , tvForwardingMPSHash = Scripts.mintingPolicyHash mps
         }
 
 -- | Make a 'TypedValidator' from the 'CompiledCode' of a paramaterized validator script and its wrapper.
@@ -123,7 +121,7 @@ mkTypedValidatorParam vc wrapper param =
     mkTypedValidator (vc `PlutusTx.applyCode` PlutusTx.liftCode param) wrapper
 
 -- | The hash of the validator.
-validatorHash :: TypedValidator a -> ValidatorHash
+validatorHash :: TypedValidator a -> Scripts.ValidatorHash
 validatorHash = tvValidatorHash
 
 -- | The address of the validator.
@@ -131,28 +129,28 @@ validatorAddress :: TypedValidator a -> Address
 validatorAddress = scriptHashAddress . tvValidatorHash
 
 -- | The validator script itself.
-validatorScript :: TypedValidator a -> Validator
+validatorScript :: TypedValidator a -> Scripts.Validator
 validatorScript = tvValidator
 
 -- | Make a 'TypedValidator' (with no type constraints) from an untyped 'Validator' script.
-unsafeMkTypedValidator :: Validator -> TypedValidator Any
+unsafeMkTypedValidator :: Scripts.Validator -> TypedValidator Any
 unsafeMkTypedValidator vl =
     let vh = Scripts.validatorHash vl
-        mps = MPS.mkForwardingMonetaryPolicy vh
+        mps = MPS.mkForwardingMintingPolicy vh
     in
     TypedValidator
         { tvValidator         = vl
         , tvValidatorHash     = vh
         , tvForwardingMPS     = mps
-        , tvForwardingMPSHash = Scripts.monetaryPolicyHash mps
+        , tvForwardingMPSHash = Scripts.mintingPolicyHash mps
         }
 
--- | The monetary policy that forwards all checks to the instance's
+-- | The minting policy that forwards all checks to the instance's
 --   validator
-forwardingMonetaryPolicy :: TypedValidator a -> MonetaryPolicy
-forwardingMonetaryPolicy = tvForwardingMPS
+forwardingMintingPolicy :: TypedValidator a -> Scripts.MintingPolicy
+forwardingMintingPolicy = tvForwardingMPS
 
--- | Hash of the monetary policy that forwards all checks to the instance's
+-- | Hash of the minting policy that forwards all checks to the instance's
 --   validator
-forwardingMonetaryPolicyHash :: TypedValidator a -> MonetaryPolicyHash
-forwardingMonetaryPolicyHash = tvForwardingMPSHash
+forwardingMintingPolicyHash :: TypedValidator a -> Scripts.MintingPolicyHash
+forwardingMintingPolicyHash = tvForwardingMPSHash

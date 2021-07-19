@@ -14,20 +14,21 @@ import Data.Map (Map)
 import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Halogen (RefLabel(..))
-import Marlowe.Execution.Types (ExecutionState, NamedAction)
+import Marlowe.Execution.Types (NamedAction)
+import Marlowe.Execution.Types (State) as Execution
 import Marlowe.Extended.Metadata (MetaData)
-import Marlowe.PAB (PlutusAppId, MarloweParams)
+import Marlowe.PAB (MarloweParams, PlutusAppId)
 import Marlowe.Semantics (ChoiceId, ChosenNum, Party, Slot, TransactionInput, Accounts)
 import WalletData.Types (WalletDetails, WalletNickname)
 
 type State
-  = { tab :: Tab -- this is the tab of the current (latest) step - previous steps have their own tabs
-    , executionState :: ExecutionState
+  = { nickname :: String
+    , tab :: Tab -- this is the tab of the current (latest) step - previous steps have their own tabs
+    , executionState :: Execution.State
     -- When the user submits a transaction, we save it here until we get confirmation from the PAB and
     -- can advance the contract. This enables us to show immediate feedback to the user while we wait.
     , pendingTransaction :: Maybe TransactionInput
     , previousSteps :: Array PreviousStep
-    , followerAppId :: PlutusAppId
     -- Every contract needs MarloweParams, but this is a Maybe because we want to create "placeholder"
     -- contracts when a user creates a contract, to show on the page until the blockchain settles and
     -- we get the MarloweParams back from the PAB (through the MarloweFollower app).
@@ -64,10 +65,13 @@ derive instance eqTab :: Eq Tab
 type Input
   = { currentSlot :: Slot
     , walletDetails :: WalletDetails
+    , followerAppId :: PlutusAppId
     }
 
 data Action
-  = ConfirmAction NamedAction
+  = SelectSelf
+  | SetNickname String
+  | ConfirmAction NamedAction
   | ChangeChoice ChoiceId (Maybe ChosenNum)
   | SelectTab Int Tab
   | AskConfirmation NamedAction
@@ -80,7 +84,9 @@ data Action
   | CarouselClosed
 
 instance actionIsEvent :: IsEvent Action where
+  toEvent SelectSelf = Nothing
   toEvent (ConfirmAction _) = Just $ defaultEvent "ConfirmAction"
+  toEvent (SetNickname _) = Just $ defaultEvent "SetNickname"
   toEvent (ChangeChoice _ _) = Just $ defaultEvent "ChangeChoice"
   toEvent (SelectTab _ _) = Just $ defaultEvent "SelectTab"
   toEvent (AskConfirmation _) = Just $ defaultEvent "AskConfirmation"

@@ -96,20 +96,22 @@ runConfigCommand ::
     -> IO ()
 
 -- Run mock wallet service
-runConfigCommand ConfigCommandArgs{ccaTrace,ccaPABConfig=Config {nodeServerConfig, chainIndexConfig, walletServerConfig},ccaAvailability} MockWallet =
+runConfigCommand ConfigCommandArgs{ccaTrace, ccaPABConfig = Config {nodeServerConfig, chainIndexConfig, walletServerConfig},ccaAvailability} MockWallet =
     liftIO $ WalletServer.main
         (toWalletLog ccaTrace)
         walletServerConfig
+        (mscFeeConfig nodeServerConfig)
         (mscSocketPath nodeServerConfig)
         (mscSlotConfig nodeServerConfig)
         (ChainIndex.ciBaseUrl chainIndexConfig)
         ccaAvailability
 
 -- Run mock node server
-runConfigCommand ConfigCommandArgs{ccaTrace,ccaPABConfig= Config {nodeServerConfig},ccaAvailability} MockNode =
+runConfigCommand ConfigCommandArgs{ccaTrace, ccaPABConfig = Config {nodeServerConfig},ccaAvailability} (MockNode withoutMockServer) =
     liftIO $ NodeServer.main
         (toMockNodeServerLog ccaTrace)
         nodeServerConfig
+        withoutMockServer
         ccaAvailability
 
 -- Run mock metadata server

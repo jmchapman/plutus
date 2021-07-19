@@ -16,6 +16,7 @@ module PlutusCore.Evaluation.Machine.ExMemory
 ) where
 
 import           PlutusCore.Core
+import           PlutusCore.Data
 import           PlutusCore.Name
 import           PlutusCore.Pretty
 import           PlutusPrelude
@@ -99,7 +100,7 @@ type CostingInteger =
 
 -- | Counts size in machine words.
 newtype ExMemory = ExMemory CostingInteger
-  deriving (Eq, Ord, Show, Lift)
+  deriving (Eq, Ord, Show, Generic, Lift)
   deriving newtype (Num, NFData)
   deriving (Semigroup, Monoid) via (Sum CostingInteger)
   deriving (FromJSON, ToJSON) via CostingInteger
@@ -111,7 +112,7 @@ instance PrettyBy config ExMemory where
 -- | Counts CPU units in picoseconds: maximum value for SatInt is 2^63 ps, or
 -- appproximately 106 days.
 newtype ExCPU = ExCPU CostingInteger
-  deriving (Eq, Ord, Show, Lift)
+  deriving (Eq, Ord, Show, Generic, Lift)
   deriving newtype (Num, NFData)
   deriving (Semigroup, Monoid) via (Sum CostingInteger)
   deriving (FromJSON, ToJSON) via CostingInteger
@@ -207,4 +208,12 @@ instance ExMemoryUsage Char where
 instance ExMemoryUsage Bool where
   memoryUsage _ = 1
 
-deriving via GenericExMemoryUsage [a] instance ExMemoryUsage a => ExMemoryUsage [a]
+-- TODO: The generic instance will traverse the list every time, which is bad. We need some sensible
+-- solution here in future.
+instance ExMemoryUsage [a] where
+  memoryUsage _ = 1
+
+-- TODO; The generic instance will traverse the structure every time, which is bad. We need some sensible
+-- solution here in future.
+instance ExMemoryUsage Data where
+  memoryUsage _ = 1

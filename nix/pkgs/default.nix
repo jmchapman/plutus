@@ -31,6 +31,10 @@ let
   hie-bios = exeFromExtras "hie-bios";
   haskellNixAgda = haskell.extraPackages.Agda;
 
+  # These are needed to pull the cardano-cli and cardano-node in the nix-shell.
+  inherit (haskell.project.hsPkgs.cardano-cli.components.exes) cardano-cli;
+  inherit (haskell.project.hsPkgs.cardano-node.components.exes) cardano-node;
+
   # We want to keep control of which version of Agda we use, so we supply our own and override
   # the one from nixpkgs.
   #
@@ -59,7 +63,19 @@ let
     in
     pkgs.agdaPackages.override { Agda = frankenAgda; pkgs = frankenPkgs; };
 
-  agdaWithStdlib = agdaPackages.agda.withPackages [ agdaPackages.standard-library ];
+  agdaWithStdlib =
+    # Need a newer version for 2.6.2 compatibility
+    let stdlib = agdaPackages.standard-library.overrideAttrs (oldAtts: rec {
+      version = "1.7";
+      src = pkgs.fetchFromGitHub {
+        repo = "agda-stdlib";
+        owner = "agda";
+        rev = "v${version}";
+        sha256 = "14h3jprm6924g9576v25axn9v6xnip354hvpzlcqsc5qqyj7zzjs";
+      };
+    });
+
+    in agdaPackages.agda.withPackages [ stdlib ];
 
   #
   # dev convenience scripts
@@ -73,6 +89,7 @@ let
 
     # Update the linux files (will do for all unixes atm).
     $(nix-build default.nix -A plutus.haskell.project.plan-nix.passthru.updateMaterialized --argstr system x86_64-linux)
+    $(nix-build default.nix -A plutus.haskell.project.plan-nix.passthru.updateMaterialized --argstr system x86_64-darwin)
 
     # This updates the sha files for the extra packages
     $(nix-build default.nix -A plutus.haskell.extraPackages.updateAllShaFiles --argstr system x86_64-linux)
@@ -179,7 +196,7 @@ in
 {
   inherit sphinx-markdown-tables sphinxemoji sphinxcontrib-haddock;
   inherit nix-pre-commit-hooks;
-  inherit haskell agdaPackages cabal-install cardano-repo-tool stylish-haskell hlint haskell-language-server hie-bios;
+  inherit haskell agdaPackages cabal-install cardano-repo-tool stylish-haskell hlint haskell-language-server hie-bios cardano-cli cardano-node;
   inherit purty purty-pre-commit purs spago spago2nix;
   inherit fixPurty fixStylishHaskell fixPngOptimization updateMaterialized updateMetadataSamples updateClientDeps;
   inherit web-ghc;

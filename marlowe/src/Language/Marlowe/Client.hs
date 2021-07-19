@@ -3,7 +3,6 @@
 {-# LANGUAGE DefaultSignatures     #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE DerivingStrategies    #-}
 {-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -24,9 +23,10 @@
 
 module Language.Marlowe.Client where
 import           Control.Lens
-import           Control.Monad                (forM_)
+import           Control.Monad                (forM_, void)
 import           Control.Monad.Error.Lens     (catching, throwing)
 import           Data.Aeson                   (FromJSON, ToJSON, parseJSON, toJSON)
+import           Data.Default                 (Default (def))
 import           Data.Map.Strict              (Map)
 import qualified Data.Map.Strict              as Map
 import           Data.Maybe                   (isNothing, maybeToList)
@@ -50,6 +50,7 @@ import           Ledger.Constraints
 import qualified Ledger.Constraints           as Constraints
 import qualified Ledger.Interval              as Interval
 import           Ledger.Scripts               (Validator, datumHash, unitRedeemer)
+import qualified Ledger.TimeSlot              as TimeSlot
 import qualified Ledger.Typed.Scripts         as Scripts
 import           Ledger.Typed.Tx              (TypedScriptTxOut (..), tyTxOutData)
 import qualified Ledger.Value                 as Val
@@ -58,7 +59,7 @@ import           Plutus.Contract.StateMachine (AsSMContractError (..), StateMach
                                                WaitingResult (..), getStates)
 import qualified Plutus.Contract.StateMachine as SM
 import qualified Plutus.Contracts.Currency    as Currency
-import qualified PlutusTx                     as PlutusTx
+import qualified PlutusTx
 import qualified PlutusTx.AssocMap            as AssocMap
 import qualified PlutusTx.Prelude             as P
 
@@ -83,7 +84,7 @@ data MarloweError =
     | MarloweEvaluationError TransactionError
     | OtherContractError ContractError
     | RolesCurrencyError Currency.CurrencyError
-  deriving stock (Show, Generic)
+  deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON, FromJSON)
 
 
@@ -110,8 +111,6 @@ data PartyAction
   deriving (Show)
 
 type RoleOwners = AssocMap.Map Val.TokenName PubKeyHash
-
-type MarloweContractState = [MarloweData]
 
 data ContractHistory =
     ContractHistory
@@ -140,6 +139,20 @@ instance Semigroup ContractProgress where
 
 instance Monoid ContractProgress where
     mempty = InProgress
+
+
+data LastResult = OK | SomeError MarloweError | Unknown
+  deriving (Show,Eq,Generic)
+  deriving anyclass (ToJSON, FromJSON)
+
+instance Semigroup LastResult where
+    any <> Unknown = any
+    _ <> last      = last
+
+instance Monoid LastResult where
+    mempty = Unknown
+
+type MarloweContractState = LastResult
 
 
 marloweFollowContract :: Contract ContractHistory MarloweFollowSchema MarloweError ()
@@ -210,7 +223,7 @@ marloweFollowContract = do
         let marloweTxInputs = filter (\(validator, _, _) -> validator == script) inputs
         case marloweTxInputs of
             []                          -> Nothing
-            [(_, Ledger.Redeemer d, _)] -> PlutusTx.fromData d
+            [(_, Ledger.Redeemer d, _)] -> PlutusTx.fromBuiltinData d
             _                           -> Nothing
 
 {-  This is a control contract.
@@ -219,7 +232,12 @@ marloweFollowContract = do
  -}
 marlowePlutusContract :: Contract MarloweContractState MarloweSchema MarloweError ()
 marlowePlutusContract = do
-    create `select` apply `select` auto `select` redeem `select` close
+    catching _MarloweError
+        (void $ mapError (review _MarloweError) $
+            create `select` apply `select` auto `select` redeem `select` close)
+        (\er -> do
+            tell $ SomeError er
+            marlowePlutusContract)
   where
     create = do
         (owners, contract) <- endpoint @"create"
@@ -239,6 +257,7 @@ marlowePlutusContract = do
     apply = do
         (params, slotInterval, inputs) <- endpoint @"apply-inputs"
         _ <- applyInputs params slotInterval inputs
+        tell OK
         marlowePlutusContract
     redeem = mapError (review _MarloweError) $ do
         (MarloweParams{rolesCurrency}, role, pkh) <-
@@ -246,7 +265,7 @@ marlowePlutusContract = do
         let address = scriptHashAddress (mkRolePayoutValidatorHash rolesCurrency)
         utxos <- utxoAt address
         let spendPayoutConstraints tx ref TxOutTx{txOutTxOut} = let
-                expectedDatumHash = datumHash (Datum $ PlutusTx.toData role)
+                expectedDatumHash = datumHash (Datum $ PlutusTx.toBuiltinData role)
                 amount = txOutValue txOutTxOut
                 in case txOutDatum txOutTxOut of
                     Just datumHash | datumHash == expectedDatumHash ->
@@ -267,6 +286,7 @@ marlowePlutusContract = do
                 <> Constraints.ownPubKeyHash pkh
         tx <- either (throwing _ConstraintResolutionError) pure (Constraints.mkTx @Void lookups constraints)
         _ <- submitUnbalancedTx tx
+        tell OK
         marlowePlutusContract
     auto = do
         (params, party, untilSlot) <- endpoint @"auto"
@@ -275,24 +295,30 @@ marlowePlutusContract = do
             continueWith md@MarloweData{marloweContract} =
                 if canAutoExecuteContractForParty party marloweContract
                 then autoExecuteContract theClient party md
-                else marlowePlutusContract
+                else do
+                    tell OK
+                    marlowePlutusContract
 
         maybeState <- SM.getOnChainState theClient
         case maybeState of
             Nothing -> do
-                wr <- SM.waitForUpdateUntil theClient untilSlot
+                wr <- SM.waitForUpdateUntilSlot theClient untilSlot
                 case wr of
                     ContractEnded -> do
                         logInfo @String $ "Contract Ended for party " <> show party
+                        tell OK
                         marlowePlutusContract
                     Timeout _ -> do
                         logInfo @String $ "Contract Timeout for party " <> show party
+                        tell OK
                         marlowePlutusContract
                     WaitingResult marloweData -> continueWith marloweData
             Just ((st, _), _) -> do
                 let marloweData = tyTxOutData st
                 continueWith marloweData
-    close = endpoint @"close"
+    close = do
+        endpoint @"close"
+        tell OK
 
 
     autoExecuteContract :: StateMachineClient MarloweData MarloweInput
@@ -323,10 +349,11 @@ marlowePlutusContract = do
                 continueWith marloweData
             WaitOtherActionUntil timeout -> do
                 logInfo @String $ "WaitOtherActionUntil " <> show timeout
-                wr <- SM.waitForUpdateUntil theClient timeout
+                wr <- SM.waitForUpdateUntilSlot theClient timeout
                 case wr of
                     ContractEnded -> do
                         logInfo @String $ "Contract Ended"
+                        tell OK
                         marlowePlutusContract
                     Timeout _ -> do
                         logInfo @String $ "Contract Timeout"
@@ -335,10 +362,12 @@ marlowePlutusContract = do
 
             CloseContract -> do
                 logInfo @String $ "CloseContract"
+                tell OK
                 marlowePlutusContract
 
             NotSure -> do
                 logInfo @String $ "NotSure"
+                tell OK
                 marlowePlutusContract
 
           where
@@ -361,7 +390,7 @@ setupMarloweParams owners contract = mapError (review _MarloweError) $ do
     else if roles `Set.isSubsetOf` Set.fromList (AssocMap.keys owners)
     then do
         let tokens = fmap (\role -> (role, 1)) $ Set.toList roles
-        cur <- mapError RolesCurrencyError $ Currency.forgeContract creator tokens
+        cur <- mapError RolesCurrencyError $ Currency.mintContract creator tokens
         let rolesSymbol = Currency.currencySymbol cur
         let giveToParty (role, pkh) = Constraints.mustPayToPubKey pkh (Val.singleton rolesSymbol role 1)
         let distributeRoleTokens = foldMap giveToParty (AssocMap.toList owners)
@@ -520,14 +549,15 @@ mkMarloweStateMachineTransition params SM.State{ SM.stateData=MarloweData{..}, S
                     marloweState = txOutState }
 
             let (outputsConstraints, finalBalance) = case txOutContract of
-                    Close -> (payoutContraints txOutPayments, P.zero)
+                    Close -> (payoutConstraints txOutPayments, P.zero)
                     _ -> let
-                        outputsConstraints = payoutContraints txOutPayments
+                        outputsConstraints = payoutConstraints txOutPayments
                         totalIncome = P.foldMap collectDeposits inputs
-                        totalPayouts = P.foldMap (\(Payment _ v) -> v) txOutPayments
+                        totalPayouts = P.foldMap (\(Payment _ _ v) -> v) txOutPayments
                         finalBalance = totalIncome P.- totalPayouts
                         in (outputsConstraints, finalBalance)
-            let range = Interval.interval minSlot maxSlot
+            -- TODO Push this use of time further down the code
+            let range = TimeSlot.slotRangeToPOSIXTimeRange def $ Interval.interval minSlot maxSlot
             let constraints = inputsConstraints <> outputsConstraints <> mustValidateIn range
             if preconditionsOk
             then Just (constraints, SM.State marloweData finalBalance)
@@ -558,18 +588,20 @@ mkMarloweStateMachineTransition params SM.State{ SM.stateData=MarloweData{..}, S
     collectDeposits (IDeposit _ _ (Token cur tok) amount) = Val.singleton cur tok amount
     collectDeposits _                                     = P.zero
 
-    payoutContraints :: [Payment] -> TxConstraints i0 o0
-    payoutContraints payments = P.foldMap paymentToTxOut paymentsByParty
+    payoutConstraints :: [Payment] -> TxConstraints i0 o0
+    payoutConstraints payments = P.foldMap payoutToTxOut payoutsByParty
       where
-        paymentsByParty = AssocMap.toList $ P.foldMap paymentByParty payments
+        payoutsByParty = AssocMap.toList $ P.foldMap payoutByParty payments
 
-        paymentToTxOut (party, value) = case party of
+        payoutToTxOut (party, value) = case party of
             PK pk  -> mustPayToPubKey pk value
             Role role -> let
-                dataValue = Datum $ PlutusTx.toData role
+                dataValue = Datum $ PlutusTx.toBuiltinData role
                 in mustPayToOtherScript (rolePayoutValidatorHash params) dataValue value
 
-        paymentByParty (Payment party money) = AssocMap.singleton party money
+        payoutByParty (Payment _ (Party party) money) = AssocMap.singleton party money
+
+        payoutByParty (Payment _ (Account _) _)       = AssocMap.empty
 
 
 {-# INLINABLE isFinal #-}

@@ -3,9 +3,11 @@
 module Spec.Escrow(tests, redeemTrace, redeem2Trace, refundTrace) where
 
 import           Control.Monad           (void)
+import           Data.Default            (Default (def))
 
 import           Ledger                  (pubKeyHash)
 import qualified Ledger.Ada              as Ada
+import qualified Ledger.TimeSlot         as TimeSlot
 import qualified Ledger.Typed.Scripts    as Scripts
 import           Plutus.Contract
 import           Plutus.Contract.Test
@@ -79,7 +81,7 @@ w3 = Wallet 3
 escrowParams :: EscrowParams d
 escrowParams =
   EscrowParams
-    { escrowDeadline = 100
+    { escrowDeadline = TimeSlot.slotToEndPOSIXTime def 100
     , escrowTargets  =
         [ payToPubKeyTarget (pubKeyHash $ walletPubKey w1) (Ada.lovelaceValueOf 10)
         , payToPubKeyTarget (pubKeyHash $ walletPubKey w2) (Ada.lovelaceValueOf 20)
@@ -104,7 +106,7 @@ redeemTrace = do
 -- | Wallets 1-3 pay into an escrow contract, wallet 1 redeems.
 redeem2Trace :: Trace.EmulatorTrace ()
 redeem2Trace = do
-    let con = (void $ both (payEp @() @EscrowSchema @EscrowError escrowParams) (redeemEp escrowParams))
+    let con = void $ both (payEp @() @EscrowSchema @EscrowError escrowParams) (redeemEp escrowParams)
     hdl1 <- Trace.activateContractWallet w1 con
     hdl2 <- Trace.activateContractWallet w2 con
     hdl3 <- Trace.activateContractWallet w3 con

@@ -18,7 +18,7 @@ import qualified Ledger.Bytes                      as LedgerBytes
 import           Ledger.Crypto                     (PubKey, PubKeyHash, Signature)
 import           Ledger.Interval                   (Extended, Interval, LowerBound, UpperBound)
 import           Ledger.Slot                       (Slot)
-import           Ledger.Tx                         (Tx, TxIn, TxInType, TxOut, TxOutRef)
+import           Ledger.Tx                         (RedeemerPtr, ScriptTag, Tx, TxIn, TxInType, TxOut, TxOutRef)
 import           Ledger.TxId                       (TxId)
 import           Plutus.Contract.Effects           (ActiveEndpoint (..), PABReq (..), PABResp (..))
 import qualified PlutusTx                          as PlutusTx
@@ -34,17 +34,17 @@ import           Wallet.Types                      (EndpointDescription (..), En
 acceptingValidator :: Ledger.Validator
 acceptingValidator = Ledger.mkValidatorScript $$(PlutusTx.compile [|| (\_ _ _ -> ()) ||])
 
--- | A monetary policy that always succeeds.
-acceptingMonetaryPolicy :: Ledger.MonetaryPolicy
-acceptingMonetaryPolicy = Ledger.mkMonetaryPolicyScript $$(PlutusTx.compile [|| (\_ -> ()) ||])
+-- | A minting policy that always succeeds.
+acceptingMintingPolicy :: Ledger.MintingPolicy
+acceptingMintingPolicy = Ledger.mkMintingPolicyScript $$(PlutusTx.compile [|| (\_ _ -> ()) ||])
 
 instance Arbitrary LedgerBytes where
     arbitrary = LedgerBytes.fromBytes <$> arbitrary
 
-instance Arbitrary Ledger.MonetaryPolicy where
-    arbitrary = pure acceptingMonetaryPolicy
+instance Arbitrary Ledger.MintingPolicy where
+    arbitrary = pure acceptingMintingPolicy
 
-instance Arbitrary Ledger.MonetaryPolicyHash where
+instance Arbitrary Ledger.MintingPolicyHash where
     arbitrary = genericArbitrary
     shrink = genericShrink
 
@@ -77,6 +77,14 @@ instance Arbitrary TxOutRef where
     shrink = genericShrink
 
 instance Arbitrary TxInType where
+    arbitrary = genericArbitrary
+    shrink = genericShrink
+
+instance Arbitrary ScriptTag where
+    arbitrary = genericArbitrary
+    shrink = genericShrink
+
+instance Arbitrary RedeemerPtr where
     arbitrary = genericArbitrary
     shrink = genericShrink
 
@@ -123,6 +131,10 @@ instance Arbitrary PlutusTx.Data where
     arbitrary = genericArbitrary
     shrink = genericShrink
 
+instance Arbitrary PlutusTx.BuiltinData where
+    arbitrary = PlutusTx.dataToBuiltinData <$> arbitrary
+    shrink d = PlutusTx.dataToBuiltinData <$> shrink (PlutusTx.builtinDataToData d)
+
 instance Arbitrary Ledger.Datum where
     arbitrary = genericArbitrary
     shrink = genericShrink
@@ -167,7 +179,9 @@ instance Arbitrary PABReq where
             , UtxoAtReq <$> arbitrary
             , AddressChangeReq <$> arbitrary
             , pure $ OwnPublicKeyReq
-            -- TODO This would need an Arbitrary Tx instance: WriteTxRequest <$> arbitrary
+            -- TODO This would need an Arbitrary Tx instance:
+            -- , BalanceTxRequest <$> arbitrary
+            -- , WriteBalancedTxRequest <$> arbitrary
             ]
 
 instance Arbitrary Address where
@@ -191,7 +205,8 @@ instance Arbitrary ActiveEndpoint where
 -- warning sign around the rabbit hole:
 -- bad :: [Gen ContractRequest]
 -- bad =
---     [ WriteTxRequest <$> arbitrary
+--     [ BalanceTxRequest <$> arbitrary
+--     , WriteBalancedTxRequest <$> arbitrary
 --     , UtxoAtRequest <$> arbitrary
 --     , AddressChangedAtRequest <$> arbitrary
 --     ]

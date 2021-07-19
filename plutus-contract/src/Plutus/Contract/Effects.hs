@@ -1,39 +1,44 @@
-{-# LANGUAGE DeriveAnyClass     #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DerivingVia        #-}
-{-# LANGUAGE LambdaCase         #-}
-{-# LANGUAGE NamedFieldPuns     #-}
-{-# LANGUAGE OverloadedStrings  #-}
-{-# LANGUAGE TemplateHaskell    #-}
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DerivingVia       #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
 module Plutus.Contract.Effects( -- TODO: Move to Requests.Internal
     PABReq(..),
     _AwaitSlotReq,
+    _AwaitTimeReq,
     _CurrentSlotReq,
+    _CurrentTimeReq,
     _AwaitTxConfirmedReq,
     _OwnContractInstanceIdReq,
-    _SendNotificationReq,
     _OwnPublicKeyReq,
     _UtxoAtReq,
     _AddressChangeReq,
-    _WriteTxReq,
+    _BalanceTxReq,
+    _WriteBalancedTxReq,
     _ExposeEndpointReq,
     PABResp(..),
     _AwaitSlotResp,
+    _AwaitTimeResp,
     _CurrentSlotResp,
+    _CurrentTimeResp,
     _AwaitTxConfirmedResp,
     _OwnContractInstanceIdResp,
-    _SendNotificationResp,
     _OwnPublicKeyResp,
     _UtxoAtResp,
     _AddressChangeResp,
-    _WriteTxResp,
+    _BalanceTxResp,
+    _WriteBalancedTxResp,
     _ExposeEndpointResp,
     matches,
 
     -- * Etc.
     UtxoAtAddress(..),
-    WriteTxResponse(..),
-    writeTxResponse,
+    BalanceTxResponse(..),
+    balanceTxResponse,
+    WriteBalancedTxResponse(..),
+    writeBalancedTxResponse,
     ActiveEndpoint(..),
     TxConfirmed(..)
     ) where
@@ -48,21 +53,24 @@ import           Ledger                      (Address, PubKey, Tx, TxId, TxOutTx
 import           Ledger.AddressMap           (UtxoMap)
 import           Ledger.Constraints.OffChain (UnbalancedTx)
 import           Ledger.Slot                 (Slot (..))
+import           Ledger.Time                 (POSIXTime (..))
 import           Wallet.API                  (WalletAPIError)
 import           Wallet.Types                (AddressChangeRequest, AddressChangeResponse, ContractInstanceId,
-                                              EndpointDescription, EndpointValue, Notification, NotificationError)
+                                              EndpointDescription, EndpointValue)
 
 -- | Requests that 'Contract's can make
 data PABReq =
     AwaitSlotReq Slot
+    | AwaitTimeReq POSIXTime
     | CurrentSlotReq
+    | CurrentTimeReq
     | AwaitTxConfirmedReq TxId
     | OwnContractInstanceIdReq
-    | SendNotificationReq Notification -- TODO: Delete
     | OwnPublicKeyReq
     | UtxoAtReq Address
     | AddressChangeReq AddressChangeRequest
-    | WriteTxReq UnbalancedTx
+    | BalanceTxReq UnbalancedTx
+    | WriteBalancedTxReq Tx
     | ExposeEndpointReq ActiveEndpoint
     deriving stock (Eq, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
@@ -70,27 +78,31 @@ data PABReq =
 instance Pretty PABReq where
   pretty = \case
     AwaitSlotReq s           -> "Await slot:" <+> pretty s
+    AwaitTimeReq s           -> "Await time:" <+> pretty s
     CurrentSlotReq           -> "Current slot"
+    CurrentTimeReq           -> "Current time"
     AwaitTxConfirmedReq txid -> "Await tx confirmed:" <+> pretty txid
     OwnContractInstanceIdReq -> "Own contract instance ID"
-    SendNotificationReq noti -> "Send notification:" <+> pretty noti
     OwnPublicKeyReq          -> "Own public key"
     UtxoAtReq addr           -> "Utxo at:" <+> pretty addr
     AddressChangeReq req     -> "Address change:" <+> pretty req
-    WriteTxReq utx           -> "Write unbalanced tx:" <+> pretty utx
+    BalanceTxReq utx         -> "Balance tx:" <+> pretty utx
+    WriteBalancedTxReq tx    -> "Write balanced tx:" <+> pretty tx
     ExposeEndpointReq ep     -> "Expose endpoint:" <+> pretty ep
 
 -- | Responses that 'Contract's receive
 data PABResp =
     AwaitSlotResp Slot
+    | AwaitTimeResp POSIXTime
     | CurrentSlotResp Slot
+    | CurrentTimeResp POSIXTime
     | AwaitTxConfirmedResp TxId
     | OwnContractInstanceIdResp ContractInstanceId
-    | SendNotificationResp (Maybe NotificationError)
     | OwnPublicKeyResp PubKey
     | UtxoAtResp UtxoAtAddress
     | AddressChangeResp AddressChangeResponse
-    | WriteTxResp WriteTxResponse
+    | BalanceTxResp BalanceTxResponse
+    | WriteBalancedTxResp WriteBalancedTxResponse
     | ExposeEndpointResp EndpointDescription (EndpointValue JSON.Value)
     deriving stock (Eq, Show, Generic)
     deriving anyclass (ToJSON, FromJSON)
@@ -99,27 +111,31 @@ data PABResp =
 instance Pretty PABResp where
   pretty = \case
     AwaitSlotResp s             -> "Slot:" <+> pretty s
+    AwaitTimeResp s             -> "Time:" <+> pretty s
     CurrentSlotResp s           -> "Current slot:" <+> pretty s
+    CurrentTimeResp s           -> "Current time:" <+> pretty s
     AwaitTxConfirmedResp txid   -> "Tx confirmed:" <+> pretty txid
     OwnContractInstanceIdResp i -> "Own contract instance ID:" <+> pretty i
-    SendNotificationResp e      -> "Send notification:" <+> pretty e
     OwnPublicKeyResp k          -> "Own public key:" <+> pretty k
     UtxoAtResp rsp              -> "Utxo at:" <+> pretty rsp
     AddressChangeResp rsp       -> "Address change:" <+> pretty rsp
-    WriteTxResp r               -> "Write unbalanced tx:" <+> pretty r
+    BalanceTxResp r             -> "Balance tx:" <+> pretty r
+    WriteBalancedTxResp r       -> "Write balanced tx:" <+> pretty r
     ExposeEndpointResp desc rsp -> "Call endpoint" <+> pretty desc <+> "with" <+> pretty rsp
 
 matches :: PABReq -> PABResp -> Bool
 matches a b = case (a, b) of
   (AwaitSlotReq{}, AwaitSlotResp{})                       -> True
+  (AwaitTimeReq{}, AwaitTimeResp{})                       -> True
   (CurrentSlotReq, CurrentSlotResp{})                     -> True
+  (CurrentTimeReq, CurrentTimeResp{})                     -> True
   (AwaitTxConfirmedReq{}, AwaitTxConfirmedResp{})         -> True
   (OwnContractInstanceIdReq, OwnContractInstanceIdResp{}) -> True
-  (SendNotificationReq{}, SendNotificationResp{})         -> True
   (OwnPublicKeyReq, OwnPublicKeyResp{})                   -> True
   (UtxoAtReq{}, UtxoAtResp{})                             -> True
   (AddressChangeReq{}, AddressChangeResp{})               -> True
-  (WriteTxReq{}, WriteTxResp{})                           -> True
+  (BalanceTxReq{}, BalanceTxResp{})                       -> True
+  (WriteBalancedTxReq{}, WriteBalancedTxResp{})           -> True
   (ExposeEndpointReq ActiveEndpoint{aeDescription}, ExposeEndpointResp desc _)
     | aeDescription == desc -> True
   _                                                       -> False
@@ -140,21 +156,37 @@ instance Pretty UtxoAtAddress where
       utxos = vsep $ fmap prettyTxOutPair (Map.toList utxo)
     in vsep ["Utxo at" <+> pretty address <+> "=", indent 2 utxos]
 
-data WriteTxResponse =
-  WriteTxFailed WalletAPIError
-  | WriteTxSuccess Tx
+data BalanceTxResponse =
+  BalanceTxFailed WalletAPIError
+  | BalanceTxSuccess Tx
   deriving stock (Eq, Show, Generic)
   deriving anyclass (ToJSON, FromJSON)
 
-instance Pretty WriteTxResponse where
+instance Pretty BalanceTxResponse where
   pretty = \case
-    WriteTxFailed e  -> "WriteTxFailed:" <+> pretty e
-    WriteTxSuccess i -> "WriteTxSuccess:" <+> pretty (txId i)
+    BalanceTxFailed e  -> "BalanceTxFailed:" <+> pretty e
+    BalanceTxSuccess i -> "BalanceTxSuccess:" <+> pretty (txId i)
 
-writeTxResponse :: Iso' WriteTxResponse (Either WalletAPIError Tx)
-writeTxResponse = iso f g where
-  f = \case { WriteTxFailed w -> Left w; WriteTxSuccess t -> Right t }
-  g = either WriteTxFailed WriteTxSuccess
+balanceTxResponse :: Iso' BalanceTxResponse (Either WalletAPIError Tx)
+balanceTxResponse = iso f g where
+  f = \case { BalanceTxFailed w -> Left w; BalanceTxSuccess t -> Right t }
+  g = either BalanceTxFailed BalanceTxSuccess
+
+data WriteBalancedTxResponse =
+  WriteBalancedTxFailed WalletAPIError
+  | WriteBalancedTxSuccess Tx
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON)
+
+instance Pretty WriteBalancedTxResponse where
+  pretty = \case
+    WriteBalancedTxFailed e  -> "WriteBalancedTxFailed:" <+> pretty e
+    WriteBalancedTxSuccess i -> "WriteBalancedTxSuccess:" <+> pretty (txId i)
+
+writeBalancedTxResponse :: Iso' WriteBalancedTxResponse (Either WalletAPIError Tx)
+writeBalancedTxResponse = iso f g where
+  f = \case { WriteBalancedTxFailed w -> Left w; WriteBalancedTxSuccess t -> Right t }
+  g = either WriteBalancedTxFailed WriteBalancedTxSuccess
 
 data ActiveEndpoint = ActiveEndpoint
   { aeDescription :: EndpointDescription -- ^ The name of the endpoint

@@ -39,7 +39,9 @@ common lang
 
 library
     import: lang
+    build-tool-depends: cardano-node:cardano-node, cardano-cli:cardano-cli
     exposed-modules:
+        Cardano.Api.NetworkId.Extra
         Cardano.BM.Data.Tracer.Extras
         Cardano.Chain
         Cardano.ChainIndex.API
@@ -59,7 +61,8 @@ library
         Cardano.Node.Server
         Cardano.Node.Types
         Cardano.Protocol.Socket.Type
-        Cardano.Protocol.Socket.Server
+        Cardano.Protocol.Socket.Mock.Server
+        Cardano.Protocol.Socket.Mock.Client
         Cardano.Protocol.Socket.Client
         Cardano.Wallet.API
         Cardano.Wallet.Client
@@ -68,7 +71,6 @@ library
         Cardano.Wallet.Types
         Control.Monad.Freer.Delay
         Control.Concurrent.Availability
-        Data.Time.Units.Extra
         Plutus.PAB.App
         Plutus.PAB.Arbitrary
         Plutus.PAB.ContractCLI
@@ -124,6 +126,7 @@ library
         bytestring -any,
         cardano-api -any,
         cardano-crypto -any,
+        cardano-ledger-byron -any,
         cardano-prelude -any,
         cardano-slotting -any,
         containers -any,
@@ -137,7 +140,7 @@ library
         http-client -any,
         http-client-tls -any,
         http-types -any,
-        io-sim-classes -any,
+        io-classes -any,
         lens -any,
         memory -any,
         monad-logger -any,
@@ -147,6 +150,10 @@ library
         newtype-generics -any,
         nothunks -any,
         optparse-applicative -any,
+        ouroboros-consensus -any,
+        ouroboros-consensus-byron -any,
+        ouroboros-consensus-shelley -any,
+        ouroboros-consensus-cardano -any,
         ouroboros-network -any,
         ouroboros-network-framework -any,
         playground-common -any,
@@ -168,13 +175,14 @@ library
         servant-websockets -any,
         stm -any,
         text -any,
-        time-units -any,
         transformers -any,
         unliftio-core -any,
         unordered-containers -any,
         uuid -any,
         vector -any,
         warp -any,
+        wai -any,
+        wai-cors -any,
         Win32-network -any,
         websockets -any,
         yaml -any,
@@ -185,8 +193,8 @@ library
         lobemo-backend-ekg -any,
         exceptions -any,
         data-default -any,
-        time-units -any,
         time -any,
+        time-units -any,
         beam-core -any,
         beam-sqlite -any,
         beam-migrate -any,
@@ -228,12 +236,12 @@ executable plutus-pab
         servant-purescript -any,
         servant-server -any,
         text -any,
+        time-units -any,
         unliftio-core -any,
         uuid -any,
         yaml -any,
         containers -any,
         iohk-monitoring -any,
-        time-units -any,
         servant-client -any,
         contra-tracer -any,
         lobemo-backend-ekg -any
@@ -250,6 +258,7 @@ executable plutus-uniswap
         base >=4.9 && <5,
         aeson -any,
         containers -any,
+        data-default -any,
         freer-extras -any,
         freer-simple -any,
         plutus-contract -any,
@@ -285,7 +294,8 @@ executable plutus-currency
         base >=4.9 && <5,
         plutus-pab,
         plutus-use-cases -any,
-        text -any
+        text -any,
+        time-units -any
 
 executable plutus-atomic-swap
     main-is: Main.hs
@@ -301,6 +311,24 @@ executable plutus-atomic-swap
         plutus-pab,
         plutus-use-cases -any,
         lens -any,
+        aeson -any,
+        playground-common -any,
+        plutus-ledger -any,
+        plutus-ledger-api -any,
+        plutus-contract -any,
+        time-units -any
+
+executable plutus-wait-for-tx
+    main-is: Main.hs
+    hs-source-dirs: examples/wait-for-tx
+    default-language: Haskell2010
+    ghc-options: -threaded -rtsopts -with-rtsopts=-N -Wall -Wcompat
+                 -Wincomplete-uni-patterns -Wincomplete-record-updates
+                 -Wno-missing-import-lists -Wredundant-constraints -O0
+    build-depends:
+        base >=4.9 && <5,
+        plutus-pab,
+        text -any,
         aeson -any,
         playground-common -any,
         plutus-ledger -any,
@@ -345,6 +373,7 @@ executable plutus-pab-test-psgenerator
         base >=4.9 && <5,
         bytestring -any,
         containers -any,
+        data-default -any,
         freer-extras -any,
         freer-simple -any,
         http-client -any,
@@ -380,6 +409,7 @@ test-suite plutus-pab-test-light
     type: exitcode-stdio-1.0
     main-is: Spec.hs
     other-modules:
+        Cardano.Api.NetworkId.ExtraSpec
         Cardano.Metadata.ServerSpec
         Cardano.Metadata.TypesSpec
         Cardano.Wallet.ServerSpec
@@ -390,9 +420,11 @@ test-suite plutus-pab-test-light
         aeson-pretty -any,
         base >=4.9 && <5,
         bytestring -any,
+        cardano-api -any,
         containers -any,
         freer-extras -any,
         freer-simple -any,
+        hedgehog -any,
         http-client -any,
         http-client-tls -any,
         lens -any,
@@ -406,6 +438,7 @@ test-suite plutus-pab-test-light
         tasty -any,
         tasty-hunit -any,
         smallcheck -any,
+        tasty-hedgehog -any,
         tasty-smallcheck -any,
         tasty-quickcheck -any,
         text -any,
@@ -435,6 +468,7 @@ test-suite plutus-pab-test-full
         base >=4.9 && <5,
         bytestring -any,
         containers -any,
+        data-default -any,
         freer-extras -any,
         freer-simple -any,
         http-client -any,
@@ -521,3 +555,19 @@ executable tx-inject
         time-units -any,
         yaml -any,
         data-default -any
+
+executable sync-client
+    import: lang
+    main-is: Main.hs
+    hs-source-dirs: sync-client
+    default-language: Haskell2010
+    build-depends:
+        base >=4.9 && <5,
+        cardano-slotting -any,
+        optparse-applicative -any,
+        ouroboros-consensus-byron -any,
+        ouroboros-consensus-cardano -any,
+        ouroboros-consensus-shelley -any,
+        ouroboros-network -any,
+        plutus-ledger,
+        plutus-pab

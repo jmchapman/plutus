@@ -26,8 +26,11 @@ module Plutus.Contract.Trace
     -- * Handle contract requests
     , handleBlockchainQueries
     , handleSlotNotifications
+    , handleTimeNotifications
     , handleOwnPubKeyQueries
     , handleCurrentSlotQueries
+    , handleCurrentTimeQueries
+    , handleUnbalancedTransactions
     , handlePendingTransactions
     , handleUtxoQueries
     , handleTxConfirmedQueries
@@ -114,6 +117,15 @@ handleSlotNotifications ::
 handleSlotNotifications =
     generalise (preview E._AwaitSlotReq) E.AwaitSlotResp RequestHandler.handleSlotNotifications
 
+handleTimeNotifications ::
+    ( Member (LogObserve (LogMessage Text)) effs
+    , Member (LogMsg RequestHandlerLogMsg) effs
+    , Member NodeClientEffect effs
+    )
+    => RequestHandler effs PABReq PABResp
+handleTimeNotifications =
+    generalise (preview E._AwaitTimeReq) E.AwaitTimeResp RequestHandler.handleTimeNotifications
+
 handleCurrentSlotQueries ::
     ( Member (LogObserve (LogMessage Text)) effs
     , Member NodeClientEffect effs
@@ -122,13 +134,22 @@ handleCurrentSlotQueries ::
 handleCurrentSlotQueries =
     generalise (preview E._CurrentSlotReq) E.CurrentSlotResp RequestHandler.handleCurrentSlot
 
+handleCurrentTimeQueries ::
+    ( Member (LogObserve (LogMessage Text)) effs
+    , Member NodeClientEffect effs
+    )
+    => RequestHandler effs PABReq PABResp
+handleCurrentTimeQueries =
+    generalise (preview E._CurrentTimeReq) E.CurrentTimeResp RequestHandler.handleCurrentTime
+
 handleBlockchainQueries ::
     RequestHandler
         (Reader ContractInstanceId ': ContractRuntimeEffect ': EmulatedWalletEffects)
         PABReq
         PABResp
 handleBlockchainQueries =
-    handlePendingTransactions
+    handleUnbalancedTransactions
+    <> handlePendingTransactions
     <> handleUtxoQueries
     <> handleTxConfirmedQueries
     <> handleOwnPubKeyQueries
@@ -136,6 +157,20 @@ handleBlockchainQueries =
     <> handleOwnInstanceIdQueries
     <> handleSlotNotifications
     <> handleCurrentSlotQueries
+    <> handleTimeNotifications
+    <> handleCurrentTimeQueries
+
+handleUnbalancedTransactions ::
+    ( Member (LogObserve (LogMessage Text)) effs
+    , Member (LogMsg RequestHandlerLogMsg) effs
+    , Member WalletEffect effs
+    )
+    => RequestHandler effs PABReq PABResp
+handleUnbalancedTransactions =
+    generalise
+        (preview E._BalanceTxReq)
+        (E.BalanceTxResp . either E.BalanceTxFailed E.BalanceTxSuccess)
+        RequestHandler.handleUnbalancedTransactions
 
 -- | Submit the wallet's pending transactions to the blockchain
 --   and inform all wallets about new transactions and respond to
@@ -148,7 +183,10 @@ handlePendingTransactions ::
     )
     => RequestHandler effs PABReq PABResp
 handlePendingTransactions =
-    generalise (preview E._WriteTxReq) (E.WriteTxResp . either E.WriteTxFailed E.WriteTxSuccess) RequestHandler.handlePendingTransactions
+    generalise
+        (preview E._WriteBalancedTxReq)
+        (E.WriteBalancedTxResp . either E.WriteBalancedTxFailed E.WriteBalancedTxSuccess)
+        RequestHandler.handlePendingTransactions
 
 -- | Look at the "utxo-at" requests of the contract and respond to all of them
 --   with the current UTXO set at the given address.

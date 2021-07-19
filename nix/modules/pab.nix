@@ -15,6 +15,7 @@ let
     pabWebserverConfig = {
       baseUrl = "http://localhost:${builtins.toString cfg.webserverPort}";
       staticDir = "${cfg.staticContent}";
+      permissiveCorsPolicy = false;
     };
 
     walletServerConfig = {
@@ -32,6 +33,13 @@ let
         scZeroSlotTime = cfg.zeroSlotTime;
         scSlotLength = cfg.slotLength;
       };
+      mscFeeConfig = {
+        fcConstantFee = {
+          getLovelace = cfg.constantFee;
+        };
+        fcScriptsFeeFactor = cfg.scriptsFeeFactor;
+      };
+      mscNetworkId = ""; # Empty string for Mainnet. Put a network magic number in the string to use the Testnet.
       mscKeptBlocks = 100000;
       mscBlockReaper = {
         brcInterval = 6000000;
@@ -166,18 +174,34 @@ in
     };
 
     zeroSlotTime = mkOption {
-      type = types.str;
-      default = "2020-07-29T21:44:51Z"; # Wednesday, July 29, 2020 21:44:51 - shelley launch time
+      type = types.int;
+      default = 1596059091000; # POSIX time of 2020-07-29T21:44:51Z (Wednesday, July 29, 2020 21:44:51) - Shelley launch time
       description = ''
-        Time of slot 0. Setting this (together with the slot length) enables pure datetime-to-slot mappings.
+        POSIX time of slot 0 in milliseconds. Setting this (together with the slot length) enables pure datetime-to-slot mappings.
       '';
     };
 
     slotLength = mkOption {
       type = types.int;
-      default = 1;
+      default = 1000;
       description = ''
-        Length of a slot (in seconds).
+        Length of a slot (in milliseconds).
+      '';
+    };
+
+    constantFee = mkOption {
+      type = types.int;
+      default = 10;
+      description = ''
+        Constant fee per transaction in lovelace.
+      '';
+    };
+
+    scriptsFeeFactor = mkOption {
+      type = types.float;
+      default = 1.0;
+      description = ''
+        Factor by which to multiply the size-dependent scripts fee in lovelace.
       '';
     };
 

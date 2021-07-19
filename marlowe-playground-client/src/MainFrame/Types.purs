@@ -38,6 +38,7 @@ import Rename.Types as Rename
 import Router (Route)
 import SaveAs.Types as SaveAs
 import SimulationPage.Types as Simulation
+import Tooltip.Types (ReferenceId)
 import Types (WebData)
 import Web.UIEvent.KeyboardEvent (KeyboardEvent)
 
@@ -129,7 +130,6 @@ data View
   | Simulation
   | BlocklyEditor
   | ActusBlocklyEditor
-  | WalletEmulator
 
 derive instance eqView :: Eq View
 
@@ -146,6 +146,8 @@ type ChildSlots
     , simulationSlot :: H.Slot Simulation.Query Blockly.Message Unit
     , simulatorEditorSlot :: H.Slot Monaco.Query Monaco.Message Unit
     , marloweEditorPageSlot :: H.Slot Monaco.Query Monaco.Message Unit
+    , tooltipSlot :: forall query. H.Slot query Void ReferenceId
+    , hintSlot :: forall query. H.Slot query Void String
     )
 
 _haskellEditorSlot :: SProxy "haskellEditorSlot"

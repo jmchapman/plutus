@@ -53,6 +53,7 @@ library
     base -any,
     bytestring,
     containers -any,
+    data-default -any,
     deriving-aeson -any,
     lens,
     mtl,
@@ -164,4 +165,5 @@ executable marlowe-pab
     freer-extras -any,
     plutus-ledger -any,
     plutus-tx -any,
-    containers -any
+    containers -any,
+    data-default -any

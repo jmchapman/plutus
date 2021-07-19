@@ -1,11 +1,10 @@
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE DeriveAnyClass     #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DerivingVia        #-}
-{-# LANGUAGE LambdaCase         #-}
-{-# LANGUAGE NamedFieldPuns     #-}
-{-# LANGUAGE OverloadedStrings  #-}
-{-# LANGUAGE TemplateHaskell    #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DerivingVia       #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
 -- | Defines a number of types that are used in Wallet.XXX modules
 module Wallet.Types(
     ContractInstanceId(..)
@@ -14,8 +13,6 @@ module Wallet.Types(
     , Notification(..)
     , EndpointDescription(..)
     , EndpointValue(..)
-    , Payment(..)
-    , emptyPayment
     , AddressChangeRequest(..)
     , targetSlot
     , slotRange
@@ -37,7 +34,6 @@ import           Data.Aeson                       (FromJSON, FromJSONKey, ToJSON
 import qualified Data.Aeson                       as Aeson
 import qualified Data.Aeson.Encode.Pretty         as JSON
 import qualified Data.ByteString.Lazy.Char8       as BSL8
-import qualified Data.Set                         as Set
 import           Data.String                      (IsString (..))
 import           Data.Text                        (Text)
 import qualified Data.Text                        as T
@@ -49,23 +45,11 @@ import qualified Data.UUID.V4                     as UUID
 import           GHC.Generics                     (Generic)
 import qualified Language.Haskell.TH.Syntax       as TH
 
-import           Ledger                           (Address, OnChainTx, Slot, SlotRange, TxIn, TxOut, eitherTx, interval,
-                                                   txId)
+import           Ledger                           (Address, OnChainTx, Slot, SlotRange, eitherTx, interval, txId)
 import           Ledger.Constraints.OffChain      (MkTxError)
 import           Plutus.Contract.Checkpoint       (AsCheckpointError (..), CheckpointError)
 import           Wallet.Emulator.Error            (WalletAPIError)
 
-
--- | A payment consisting of a set of inputs to be spent, and
---   an optional change output. The size of the payment is the
---   difference between the total value of the inputs and the
---   value of the output.
-data Payment =
-    Payment
-        { paymentInputs       :: Set.Set TxIn
-        , paymentChangeOutput :: Maybe TxOut
-        } deriving stock (Eq, Show, Generic)
-          deriving anyclass (ToJSON, FromJSON)
 
 -- | An error
 newtype MatchingError = WrongVariantError { unWrongVariantError :: Text }
@@ -189,10 +173,6 @@ instance Pretty NotificationError where
 
 makeClassyPrisms ''NotificationError
 
--- | A payment with zero inputs and no change output
-emptyPayment :: Payment
-emptyPayment = Payment { paymentInputs = Set.empty, paymentChangeOutput = Nothing }
-
 -- | Information about transactions that spend or produce an output at
 --   an address in a slot range.
 data AddressChangeResponse =
@@ -223,6 +203,13 @@ data AddressChangeRequest =
         deriving stock (Eq, Generic, Show, Ord)
         deriving anyclass (ToJSON, FromJSON)
 
+instance Pretty AddressChangeRequest where
+    pretty AddressChangeRequest{acreqSlotRangeFrom, acreqSlotRangeTo, acreqAddress} =
+        hang 2 $ vsep
+            [ "From " <+> pretty acreqSlotRangeFrom <+> "to" <+> pretty acreqSlotRangeTo
+            , "Address:" <+> pretty acreqAddress
+            ]
+
 -- | The earliest slot in which we can respond to an 'AddressChangeRequest'.
 targetSlot :: AddressChangeRequest -> Slot
 targetSlot = succ . acreqSlotRangeTo
@@ -231,10 +218,3 @@ targetSlot = succ . acreqSlotRangeTo
 slotRange :: AddressChangeRequest -> SlotRange
 slotRange AddressChangeRequest{acreqSlotRangeFrom, acreqSlotRangeTo} =
     interval acreqSlotRangeFrom acreqSlotRangeTo
-
-instance Pretty AddressChangeRequest where
-    pretty AddressChangeRequest{acreqSlotRangeFrom, acreqSlotRangeTo, acreqAddress} =
-        hang 2 $ vsep
-            [ "From " <+> pretty acreqSlotRangeFrom <+> "to" <+> pretty acreqSlotRangeTo
-            , "Address:" <+> pretty acreqAddress
-            ]

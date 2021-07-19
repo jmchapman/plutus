@@ -31,6 +31,7 @@ import qualified Data.Text                         as T
 import           Data.Text.Extras                  (tshow)
 import           Data.Text.Prettyprint.Doc
 import           GHC.Generics                      (Generic)
+import           Ledger.Fee                        (FeeConfig)
 
 import           Ledger                            hiding (to, value)
 import qualified Ledger.AddressMap                 as AM
@@ -106,6 +107,9 @@ walletClientEvent w = prism' (ClientEvent w) (\case { ClientEvent w' c | w == w'
 
 walletEvent :: Wallet.Wallet -> Prism' EmulatorEvent' Wallet.WalletEvent
 walletEvent w = prism' (WalletEvent w) (\case { WalletEvent w' c | w == w' -> Just c; _ -> Nothing })
+
+walletEvent' :: Prism' EmulatorEvent' (Wallet.Wallet, Wallet.WalletEvent)
+walletEvent' = prism' (uncurry WalletEvent) (\case { WalletEvent w c -> Just (w, c); _ -> Nothing })
 
 chainIndexEvent :: Wallet.Wallet -> Prism' EmulatorEvent' ChainIndex.ChainIndexEvent
 chainIndexEvent w = prism' (ChainIndexEvent w) (\case { ChainIndexEvent w' c | w == w' -> Just c; _ -> Nothing })
@@ -285,11 +289,12 @@ emulatorStateInitialDist mp = emulatorStatePool [tx] where
             { txInputs = mempty
             , txCollateral = mempty
             , txOutputs = uncurry (flip pubKeyTxOut) <$> Map.toList mp
-            , txForge = foldMap snd $ Map.toList mp
+            , txMint = foldMap snd $ Map.toList mp
             , txFee = mempty
             , txValidRange = WAPI.defaultSlotRange
-            , txForgeScripts = mempty
+            , txMintScripts = mempty
             , txSignatures = mempty
+            , txRedeemers = mempty
             , txData = mempty
             }
 
@@ -335,8 +340,9 @@ handleMultiAgentControl = interpret $ \case
 
 handleMultiAgent
     :: forall effs. Members MultiAgentEffs effs
-    => Eff (MultiAgentEffect ': effs) ~> Eff effs
-handleMultiAgent = interpret $ \case
+    => FeeConfig
+    -> Eff (MultiAgentEffect ': effs) ~> Eff effs
+handleMultiAgent feeCfg = interpret $ \case
     -- TODO: catch, log, and rethrow wallet errors?
     WalletAction wallet act ->  do
         let
@@ -356,7 +362,7 @@ handleMultiAgent = interpret $ \case
             p7 = notificationEvent
         act
             & raiseEnd
-            & interpret Wallet.handleWallet
+            & interpret (Wallet.handleWallet feeCfg)
             & subsume
             & NC.handleNodeClient
             & ChainIndex.handleChainIndex

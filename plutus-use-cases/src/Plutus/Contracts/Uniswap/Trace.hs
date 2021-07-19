@@ -64,16 +64,22 @@ uniswapTrace = do
 setupTokens :: Contract (Maybe (Semigroup.Last Currency.OneShotCurrency)) Currency.CurrencySchema Currency.CurrencyError ()
 setupTokens = do
     ownPK <- pubKeyHash <$> ownPubKey
-    cur   <- Currency.forgeContract ownPK [(tn, fromIntegral (length wallets) * amount) | tn <- tokenNames]
+    cur   <- Currency.mintContract ownPK [(tn, fromIntegral (length wallets) * amount) | tn <- tokenNames]
     let cs = Currency.currencySymbol cur
         v  = mconcat [Value.singleton cs tn amount | tn <- tokenNames]
+
     forM_ wallets $ \w -> do
         let pkh = pubKeyHash $ walletPubKey w
         when (pkh /= ownPK) $ do
             tx <- submitTx $ mustPayToPubKey pkh v
             awaitTxConfirmed $ txId tx
+
     tell $ Just $ Semigroup.Last cur
-    void $ waitNSlots 10
+
+    -- Need to wait one slot or else we will get stuck in an infinite loop
+    -- when requesting the contract's observable state.
+    void $ waitNSlots 50
+
   where
     amount = 1000000
 

@@ -1,18 +1,13 @@
 module Template.Lenses
-  ( _template
-  , _contractNickname
+  ( _contractSetupStage
+  , _contractTemplate
+  , _contractNicknameInput
   , _roleWalletInputs
   , _roleWalletInput
-  , _templateContent
-  , _slotContentStrings
-  , _metaData
-  , _extendedContract
-  , _contractType
-  , _contractName
-  , _contractDescription
-  , _slotParameterDescriptions
-  , _valueParameterDescriptions
-  , _choiceDescriptions
+  , _slotContentInputs
+  , _slotContentInput
+  , _valueContentInputs
+  , _valueContentInput
   ) where
 
 import Prelude
@@ -23,18 +18,18 @@ import Data.Lens.Record (prop)
 import Data.Map (Map)
 import Data.Symbol (SProxy(..))
 import InputField.Types (State) as InputField
-import Marlowe.Extended (Contract, ContractType)
-import Marlowe.Extended.Metadata (MetaData, ContractTemplate)
+import Marlowe.Extended.Metadata (ContractTemplate)
 import Marlowe.Semantics (TokenName)
-import Marlowe.Template (TemplateContent)
-import Template.Types (State)
-import Template.Validation (RoleError)
+import Template.Types (ContractSetupStage, ContractNicknameError, RoleError, SlotError, State, ValueError)
 
-_template :: Lens' State ContractTemplate
-_template = prop (SProxy :: SProxy "template")
+_contractSetupStage :: Lens' State ContractSetupStage
+_contractSetupStage = prop (SProxy :: SProxy "contractSetupStage")
 
-_contractNickname :: Lens' State String
-_contractNickname = prop (SProxy :: SProxy "contractNickname")
+_contractTemplate :: Lens' State ContractTemplate
+_contractTemplate = prop (SProxy :: SProxy "contractTemplate")
+
+_contractNicknameInput :: Lens' State (InputField.State ContractNicknameError)
+_contractNicknameInput = prop (SProxy :: SProxy "contractNicknameInput")
 
 _roleWalletInputs :: Lens' State (Map TokenName (InputField.State RoleError))
 _roleWalletInputs = prop (SProxy :: SProxy "roleWalletInputs")
@@ -42,37 +37,14 @@ _roleWalletInputs = prop (SProxy :: SProxy "roleWalletInputs")
 _roleWalletInput :: TokenName -> Traversal' State (InputField.State RoleError)
 _roleWalletInput tokenName = _roleWalletInputs <<< at tokenName <<< _Just
 
-_templateContent :: Lens' State TemplateContent
-_templateContent = prop (SProxy :: SProxy "templateContent")
+_slotContentInputs :: Lens' State (Map String (InputField.State SlotError))
+_slotContentInputs = prop (SProxy :: SProxy "slotContentInputs")
 
-_slotContentStrings :: Lens' State (Map String String)
-_slotContentStrings = prop (SProxy :: SProxy "slotContentStrings")
+_slotContentInput :: String -> Traversal' State (InputField.State SlotError)
+_slotContentInput key = _slotContentInputs <<< at key <<< _Just
 
-------------------------------------------------------------
-_metaData :: Lens' ContractTemplate MetaData
-_metaData = prop (SProxy :: SProxy "metaData")
+_valueContentInputs :: Lens' State (Map String (InputField.State ValueError))
+_valueContentInputs = prop (SProxy :: SProxy "valueContentInputs")
 
-_extendedContract :: Lens' ContractTemplate Contract
-_extendedContract = prop (SProxy :: SProxy "extendedContract")
-
-------------------------------------------------------------
-_contractType :: Lens' MetaData ContractType
-_contractType = prop (SProxy :: SProxy "contractType")
-
-_contractName :: Lens' MetaData String
-_contractName = prop (SProxy :: SProxy "contractName")
-
-_contractDescription :: Lens' MetaData String
-_contractDescription = prop (SProxy :: SProxy "contractDescription")
-
-_roleDescriptions :: Lens' MetaData (Map TokenName String)
-_roleDescriptions = prop (SProxy :: SProxy "roleDescriptions")
-
-_slotParameterDescriptions :: Lens' MetaData (Map String String)
-_slotParameterDescriptions = prop (SProxy :: SProxy "slotParameterDescriptions")
-
-_valueParameterDescriptions :: Lens' MetaData (Map String String)
-_valueParameterDescriptions = prop (SProxy :: SProxy "valueParameterDescriptions")
-
-_choiceDescriptions :: Lens' MetaData (Map String String)
-_choiceDescriptions = prop (SProxy :: SProxy "choiceDescriptions")
+_valueContentInput :: String -> Traversal' State (InputField.State ValueError)
+_valueContentInput key = _valueContentInputs <<< at key <<< _Just

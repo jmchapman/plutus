@@ -43,10 +43,10 @@
         "homepage": "",
         "owner": "input-output-hk",
         "repo": "hackage.nix",
-        "rev": "6dba3997f6a39d51fe814d312b1a4b52838a8055",
-        "sha256": "0c41a066jm2j1lvg5x75193x1sy8i5p4s2a2qmdfxd2csghgi02w",
+        "rev": "afafb0104f1f5029155fcbb15bc1ce1bcd98ea6b",
+        "sha256": "1k0641683z4lm8ankir6i5wx8cyhq0g90q5li4j079hjkaan15jx",
         "type": "tarball",
-        "url": "https://github.com/input-output-hk/hackage.nix/archive/6dba3997f6a39d51fe814d312b1a4b52838a8055.tar.gz",
+        "url": "https://github.com/input-output-hk/hackage.nix/archive/afafb0104f1f5029155fcbb15bc1ce1bcd98ea6b.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "haskell-language-server": {
@@ -68,10 +68,10 @@
         "homepage": "https://input-output-hk.github.io/haskell.nix",
         "owner": "input-output-hk",
         "repo": "haskell.nix",
-        "rev": "87084d65a476cc826a0e8c5d281d494254f5bc7a",
-        "sha256": "168vj5zswhxvvgp39ksr400gl2szih9sjbcdz2wsb7r7rnwp42xp",
+        "rev": "3856d2d24dca0ecc71fcfc314253a2a2d07a3c4f",
+        "sha256": "0s69nasqhkv8n0qmdv075k83p3z584ja9vkzdnp2291mymghvx87",
         "type": "tarball",
-        "url": "https://github.com/input-output-hk/haskell.nix/archive/87084d65a476cc826a0e8c5d281d494254f5bc7a.tar.gz",
+        "url": "https://github.com/input-output-hk/haskell.nix/archive/3856d2d24dca0ecc71fcfc314253a2a2d07a3c4f.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "iohk-nix": {
@@ -100,16 +100,16 @@
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "npmlock2nix": {
-        "branch": "restricted-mode-support",
+        "branch": "master",
         "builtin": false,
         "description": null,
         "homepage": null,
         "owner": "tweag",
         "repo": "npmlock2nix",
-        "rev": "5d3586977dea8d5680f383adee98be2667fa8131",
-        "sha256": "0ni3z64wf1cha7xf5vqzqfqs73qc938zvnnbn147li1m4v8pnzzx",
+        "rev": "9d71a0fc7a7450e740dba1bcdaed1eb9faa57bc2",
+        "sha256": "1qivxvm9shqi44pv1fbhmbb605nnrp8sirs8slbv0d1idrvsdyq5",
         "type": "tarball",
-        "url": "https://github.com/tweag/npmlock2nix/archive/5d3586977dea8d5680f383adee98be2667fa8131.tar.gz",
+        "url": "https://github.com/tweag/npmlock2nix/archive/9d71a0fc7a7450e740dba1bcdaed1eb9faa57bc2.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "pre-commit-hooks.nix": {
@@ -119,10 +119,10 @@
         "homepage": "",
         "owner": "cachix",
         "repo": "pre-commit-hooks.nix",
-        "rev": "2e7fac06108b4fc81f5ff9ed9a02bc4f6ede7001",
-        "sha256": "17xlb7cb1n6cyw8my6ks4iacrz49a6wfqrdj2gvjc52qc91wxvj7",
+        "rev": "0398f0649e0a741660ac5e8216760bae5cc78579",
+        "sha256": "0b4v3bzx18914a38ix5dlgg4ad9np8ma0myi9fiqdlzgj2jd8b59",
         "type": "tarball",
-        "url": "https://github.com/cachix/pre-commit-hooks.nix/archive/2e7fac06108b4fc81f5ff9ed9a02bc4f6ede7001.tar.gz",
+        "url": "https://github.com/cachix/pre-commit-hooks.nix/archive/0398f0649e0a741660ac5e8216760bae5cc78579.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "spago2nix": {

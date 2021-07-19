@@ -6,21 +6,26 @@ module StaticAnalysis.BottomPanel
 
 import Prelude hiding (div)
 import Data.BigInteger (BigInteger)
-import Data.Foldable (foldMap)
-import Data.Lens ((^.))
+import Data.Lens (view, (^.))
 import Data.List (List, null, toUnfoldable)
 import Data.List as List
 import Data.List.NonEmpty (toList)
+import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
+import Data.Tuple.Nested ((/\))
+import Effect.Aff.Class (class MonadAff)
+import Halogen (ComponentHTML)
 import Halogen.Classes (btn, spaceBottom, spaceRight, spaceTop, spanText)
-import Halogen.HTML (ClassName(..), HTML, b_, br_, button, div, h2, h3, li_, ol, span_, text, ul)
+import Halogen.HTML (ClassName(..), HTML, b_, br_, button, div, h3, li_, ol, span_, text, ul)
 import Halogen.HTML.Events (onClick)
 import Halogen.HTML.Properties (class_, classes, enabled)
-import Marlowe.Extended.Metadata (MetaData)
-import Marlowe.Semantics (ChoiceId(..), Input(..), Payee(..), Slot(..), SlotInterval(..), TransactionInput(..), TransactionWarning(..))
+import MainFrame.Types (ChildSlots)
+import Marlowe.Extended.Metadata (MetaData, NumberFormat(..), _valueParameterDescription)
+import Marlowe.Semantics (ChoiceId(..), Input(..), Slot(..), SlotInterval(..), TransactionInput(..))
 import Marlowe.Symbolic.Types.Response as R
 import Marlowe.Template (IntegerTemplateType(..))
+import Marlowe.ViewPartials (displayWarningList)
 import Network.RemoteData (RemoteData(..))
 import Pretty (showPrettyToken)
 import Servant.PureScript.Ajax (AjaxError(..), ErrorDescription(..))
@@ -48,7 +53,13 @@ clearButton isEnabled name action =
     ]
     [ text name ]
 
-analysisResultPane :: forall action p state. MetaData -> (IntegerTemplateType -> String -> BigInteger -> action) -> { analysisState :: AnalysisState | state } -> HTML p action
+analysisResultPane ::
+  forall action m state.
+  MonadAff m =>
+  MetaData ->
+  (IntegerTemplateType -> String -> BigInteger -> action) ->
+  { analysisState :: AnalysisState | state } ->
+  ComponentHTML action ChildSlots m
 analysisResultPane metadata actionGen state =
   let
     templateContent = state ^. (_analysisState <<< _templateContent)
@@ -62,8 +73,8 @@ analysisResultPane metadata actionGen state =
         explanation
           [ text ""
           , ul [ class_ (ClassName "templates") ]
-              ( integerTemplateParameters metadata.slotParameterDescriptions actionGen SlotContent "Timeout template parameters" "Slot for" (unwrap templateContent).slotContent
-                  <> integerTemplateParameters metadata.valueParameterDescriptions actionGen ValueContent "Value template parameters" "Constant for" (unwrap templateContent).valueContent
+              ( integerTemplateParameters actionGen slotParameterDisplayInfo (unwrap templateContent).slotContent
+                  <> integerTemplateParameters actionGen valueParameterDisplayInfo (unwrap templateContent).valueContent
               )
           ]
       WarningAnalysis staticSubResult -> case staticSubResult of
@@ -229,6 +240,28 @@ analysisResultPane metadata actionGen state =
             [ h3 [ classes [ ClassName "analysis-result-title" ] ] [ text "Close Refund Analysis Result: No implicit refunds" ]
             , text "None of the Close constructs refunds any money, all refunds are explicit."
             ]
+  where
+  slotParameterDisplayInfo =
+    { lookupFormat: const Nothing
+    , lookupDefinition: (flip Map.lookup) metadata.slotParameterDescriptions
+    , typeName: SlotContent
+    , title: "Timeout template parameters"
+    , prefix: "Slot for"
+    }
+
+  valueParameterDisplayInfo =
+    { lookupFormat: extractValueParameterNuberFormat
+    , lookupDefinition: (flip lookupDescription) metadata.valueParameterInfo
+    , typeName: ValueContent
+    , title: "Value template parameters"
+    , prefix: "Constant for"
+    }
+
+  extractValueParameterNuberFormat valueParameter = case Map.lookup valueParameter metadata.valueParameterInfo of
+    Just { valueParameterFormat: DecimalFormat numDecimals currencyLabel } -> Just (currencyLabel /\ numDecimals)
+    _ -> Nothing
+
+  lookupDescription k m = view _valueParameterDescription <$> Map.lookup k m
 
 displayTransactionList :: forall p action. Array TransactionInput -> HTML p action
 displayTransactionList transactionList =
@@ -296,94 +329,4 @@ displayInput (INotify) =
   [ b_ [ text "INotify" ]
   , text " - The contract is notified that an observation became "
   , b_ [ text "True" ]
-  ]
-
-displayWarningList :: forall p action. Array TransactionWarning -> HTML p action
-displayWarningList transactionWarnings =
-  ol [ classes [ ClassName "indented-enum" ] ]
-    ( do
-        warning <- transactionWarnings
-        pure (li_ (displayWarning warning))
-    )
-
-displayWarnings :: forall p action. Array TransactionWarning -> HTML p action
-displayWarnings [] = text mempty
-
-displayWarnings warnings =
-  div
-    [ classes
-        [ ClassName "invalid-transaction"
-        , ClassName "input-composer"
-        ]
-    ]
-    [ h2 [] [ text "Warnings" ]
-    , ol
-        []
-        $ foldMap (\warning -> [ li_ (displayWarning warning) ]) warnings
-    ]
-
-displayWarning :: forall p action. TransactionWarning -> Array (HTML p action)
-displayWarning (TransactionNonPositiveDeposit party owner tok amount) =
-  [ b_ [ text "TransactionNonPositiveDeposit" ]
-  , text " - Party "
-  , b_ [ text $ show party ]
-  , text " is asked to deposit "
-  , b_ [ text $ show amount ]
-  , text " units of "
-  , b_ [ text $ showPrettyToken tok ]
-  , text " into account of "
-  , b_ [ text (show owner) ]
-  , text "."
-  ]
-
-displayWarning (TransactionNonPositivePay owner payee tok amount) =
-  [ b_ [ text "TransactionNonPositivePay" ]
-  , text " - The contract is supposed to make a payment of "
-  , b_ [ text $ show amount ]
-  , text " units of "
-  , b_ [ text $ showPrettyToken tok ]
-  , text " from account of "
-  , b_ [ text (show owner) ]
-  , text " to "
-  , b_
-      [ text case payee of
-          (Account owner2) -> ("account of " <> (show owner2))
-          (Party dest) -> ("party " <> (show dest))
-      ]
-  , text "."
-  ]
-
-displayWarning (TransactionPartialPay owner payee tok amount expected) =
-  [ b_ [ text "TransactionPartialPay" ]
-  , text " - The contract is supposed to make a payment of "
-  , b_ [ text $ show expected ]
-  , text " units of "
-  , b_ [ text $ showPrettyToken tok ]
-  , text " from account of "
-  , b_ [ text (show owner) ]
-  , text " to "
-  , b_
-      [ text case payee of
-          (Account owner2) -> ("account of " <> (show owner2))
-          (Party dest) -> ("party " <> (show dest))
-      ]
-  , text " but there is only "
-  , b_ [ text $ show amount ]
-  , text "."
-  ]
-
-displayWarning (TransactionShadowing valId oldVal newVal) =
-  [ b_ [ text "TransactionShadowing" ]
-  , text " - The contract defined the value with id "
-  , b_ [ text (show valId) ]
-  , text " before, it was assigned the value "
-  , b_ [ text (show oldVal) ]
-  , text " and now it is being assigned the value "
-  , b_ [ text (show newVal) ]
-  , text "."
-  ]
-
-displayWarning TransactionAssertionFailed =
-  [ b_ [ text "TransactionAssertionFailed" ]
-  , text " - An assertion in the contract did not hold."
   ]

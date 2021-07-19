@@ -11,7 +11,7 @@ module Plutus.PAB.Core.ContractInstance.BlockchainEnv(
   , getClientEnv
   ) where
 
-import qualified Cardano.Protocol.Socket.Client       as Client
+import qualified Cardano.Protocol.Socket.Mock.Client  as Client
 import           Ledger                               (Address, Block, OnChainTx, Slot, TxId, eitherTx, txId)
 import           Ledger.AddressMap                    (AddressMap)
 import qualified Ledger.AddressMap                    as AddressMap
@@ -19,7 +19,6 @@ import           Plutus.PAB.Core.ContractInstance.STM (BlockchainEnv (..), Insta
                                                        emptyBlockchainEnv)
 import qualified Plutus.PAB.Core.ContractInstance.STM as S
 
-import           Cardano.Node.Types                   (SlotConfig)
 import           Control.Concurrent.STM               (STM)
 import qualified Control.Concurrent.STM               as STM
 import           Control.Lens
@@ -27,6 +26,7 @@ import           Control.Monad                        (unless, when)
 import           Data.Foldable                        (foldl')
 import           Data.Map                             (Map)
 import           Data.Set                             (Set)
+import           Ledger.TimeSlot                      (SlotConfig)
 import           Wallet.Emulator.ChainIndex.Index     (ChainIndex, ChainIndexItem (..))
 import qualified Wallet.Emulator.ChainIndex.Index     as Index
 

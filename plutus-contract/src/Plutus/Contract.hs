@@ -1,7 +1,7 @@
-{-# LANGUAGE ConstraintKinds  #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE MonoLocalBinds   #-}
-{-# LANGUAGE TypeOperators    #-}
+{-# LANGUAGE ConstraintKinds    #-}
+{-# LANGUAGE ExplicitNamespaces #-}
+{-# LANGUAGE FlexibleContexts   #-}
+{-# LANGUAGE MonoLocalBinds     #-}
 module Plutus.Contract(
       Contract(..)
     , ContractError(..)
@@ -18,6 +18,9 @@ module Plutus.Contract(
     , Request.awaitSlot
     , Request.currentSlot
     , Request.waitNSlots
+    , Request.awaitTime
+    , Request.currentTime
+    , Request.waitNMilliSeconds
     -- * Endpoints
     , Request.HasEndpoint
     , Request.EndpointDescription(..)
@@ -30,7 +33,8 @@ module Plutus.Contract(
     , Wallet.Types.AddressChangeResponse(..)
     , Request.addressChangeRequest
     , Request.nextTransactionsAt
-    , Request.watchAddressUntil
+    , Request.watchAddressUntilSlot
+    , Request.watchAddressUntilTime
     , Request.fundsAtAddressGt
     , Request.fundsAtAddressGeq
     -- * UTXO set
@@ -51,6 +55,8 @@ module Plutus.Contract(
     , Request.submitTxConstraintsSpending
     , Request.submitTxConstraintsWith
     , Request.submitUnbalancedTx
+    , Request.submitBalancedTx
+    , Request.balanceTx
     -- ** Creating transactions
     , module Tx
     -- ** Tx confirmation
@@ -115,4 +121,3 @@ logError = Contract . L.logError . toJSON
 -- | Update the contract's accumulating state @w@
 tell :: w -> Contract w s e ()
 tell = Contract . W.tell
-

@@ -38,46 +38,44 @@ module Cardano.Node.Types
     -- * Config types
     , MockServerConfig (..)
     , BlockReaperConfig (..)
-
-    -- ** Slot / timing
-    , SlotConfig(..)
-    , slotNumber
-    , currentSlot
+    , MockServerMode (..)
 
     -- * newtype wrappers
     , NodeUrl (..)
     )
         where
 
-import           Control.Lens                   (makeLenses, view)
-import           Control.Monad.Freer.TH         (makeEffect)
-import           Control.Monad.IO.Class         (MonadIO (..))
-import           Data.Aeson                     (FromJSON, ToJSON)
-import qualified Data.Map                       as Map
-import           Data.Text.Prettyprint.Doc      (Pretty (..), pretty, viaShow, (<+>))
-import           Data.Time.Clock                (UTCTime)
-import qualified Data.Time.Format.ISO8601       as F
-import           Data.Time.Units                (Second)
-import           Data.Time.Units.Extra          ()
-import           GHC.Generics                   (Generic)
-import           Ledger                         (Tx, txId)
-import           Servant.Client                 (BaseUrl)
+import           Control.Lens                        (makeLenses, view)
+import           Control.Monad.Freer.TH              (makeEffect)
+import           Control.Monad.IO.Class              (MonadIO (..))
+import           Data.Aeson                          (FromJSON, ToJSON)
+import qualified Data.Map                            as Map
+import           Data.Text.Prettyprint.Doc           (Pretty (..), pretty, viaShow, (<+>))
+import           Data.Time.Clock                     (UTCTime)
+import qualified Data.Time.Format.ISO8601            as F
+import           Data.Time.Units                     (Millisecond, Second)
+import           Data.Time.Units.Extra               ()
+import           GHC.Generics                        (Generic)
+import           Ledger                              (Tx, txId)
+import           Servant.Client                      (BaseUrl)
 
-import           Cardano.BM.Data.Tracer         (ToObject (..))
-import           Cardano.BM.Data.Tracer.Extras  (Tagged (..), mkObjectStr)
-import           Cardano.Chain                  (MockNodeServerChainState, fromEmulatorChainState)
-import qualified Cardano.Protocol.Socket.Client as Client
-import           Cardano.Protocol.Socket.Type   (SlotConfig (..), currentSlot, slotNumber)
-import           Control.Monad.Freer.Extras.Log (LogMessage, LogMsg (..))
-import           Control.Monad.Freer.Reader     (Reader)
-import           Control.Monad.Freer.State      (State)
-import qualified Plutus.Contract.Trace          as Trace
-import           Wallet.Emulator                (Wallet)
-import qualified Wallet.Emulator                as EM
-import           Wallet.Emulator.Chain          (ChainControlEffect, ChainEffect, ChainEvent)
-import qualified Wallet.Emulator.MultiAgent     as MultiAgent
+import           Cardano.BM.Data.Tracer              (ToObject (..))
+import           Cardano.BM.Data.Tracer.Extras       (Tagged (..), mkObjectStr)
+import           Cardano.Chain                       (MockNodeServerChainState, fromEmulatorChainState)
+import qualified Cardano.Protocol.Socket.Mock.Client as Client
+import           Control.Monad.Freer.Extras.Log      (LogMessage, LogMsg (..))
+import           Control.Monad.Freer.Reader          (Reader)
+import           Control.Monad.Freer.State           (State)
+import           Ledger.TimeSlot                     (SlotConfig)
+import qualified Plutus.Contract.Trace               as Trace
+import           Wallet.Emulator                     (Wallet)
+import qualified Wallet.Emulator                     as EM
+import           Wallet.Emulator.Chain               (ChainControlEffect, ChainEffect, ChainEvent)
+import qualified Wallet.Emulator.MultiAgent          as MultiAgent
 
-import           Plutus.PAB.Arbitrary           ()
+import           Cardano.Api.NetworkId.Extra         (NetworkIdWrapper (..))
+import           Ledger.Fee                          (FeeConfig)
+import           Plutus.PAB.Arbitrary                ()
 
 -- Configuration ------------------------------------------------------------------------------------------------------
 
@@ -102,6 +100,14 @@ We use this approach for the "proper" pab executable.
 newtype NodeUrl = NodeUrl BaseUrl
     deriving (Show, Eq) via BaseUrl
 
+-- | The mock node server can be replaced with a cardano node, in which case
+--   we don't want to start it.
+data MockServerMode =
+      WithMockServer
+    | WithoutMockServer
+    deriving (Show, Eq, Generic)
+    deriving anyclass ToJSON
+
 -- | Mock Node server configuration
 data MockServerConfig =
     MockServerConfig
@@ -119,6 +125,11 @@ data MockServerConfig =
         -- ^ The number of blocks to keep for replaying to a newly connected clients
         , mscSlotConfig       :: SlotConfig
         -- ^ Beginning of slot 0.
+        , mscFeeConfig        :: FeeConfig
+        -- ^ Configure constant fee per transaction and ratio by which to
+        -- multiply size-dependent scripts fee.
+        , mscNetworkId        :: NetworkIdWrapper
+        -- ^ NetworkId that's used with the CardanoAPI.
         }
     deriving (Show, Eq, Generic, FromJSON)
 
@@ -136,7 +147,7 @@ data BlockReaperConfig =
 -- | Top-level logging data type for structural logging
 -- inside the Mock Node server.
 data MockServerLogMsg =
-    StartingSlotCoordination UTCTime Second
+    StartingSlotCoordination UTCTime Millisecond
     | NoRandomTxGeneration
     | StartingRandomTx
     | KeepingOldBlocks

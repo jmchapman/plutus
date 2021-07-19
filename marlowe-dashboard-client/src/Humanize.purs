@@ -4,6 +4,7 @@ module Humanize
   , formatTime
   , humanizeInterval
   , humanizeValue
+  , contractIcon
   ) where
 
 import Prelude
@@ -18,12 +19,16 @@ import Data.Maybe (Maybe(..))
 import Data.Time.Duration (Seconds(..))
 import Data.Tuple (Tuple)
 import Data.Tuple.Nested ((/\))
+import Halogen.HTML (HTML, img)
+import Halogen.HTML.Properties (src)
+import Images (cfdIcon, loanIcon, purchaseIcon)
+import Marlowe.Extended (ContractType(..))
 import Marlowe.Semantics (Slot, SlotInterval(..), Token(..))
 import Marlowe.Slot (slotToDateTime)
 
 humanizeDuration :: Seconds -> String
 humanizeDuration (Seconds seconds)
-  | seconds <= 0.0 = "timed out"
+  | seconds <= 0.0 = "Timed out"
   | seconds <= 60.0 = show (floor seconds) <> "sec left"
   | seconds <= (60.0 * 60.0) =
     let
@@ -86,21 +91,30 @@ formatTime =
 
 humanizeValue :: Token -> BigInteger -> String
 -- TODO: use a different currencyFormatter with no decimal places when they're all zero
-humanizeValue (Token "" "") value = "₳ " <> Number.format currencyFormatter (toAda value)
+humanizeValue (Token "" "") value = "₳ " <> Number.format (numberFormatter 6) (toAda value)
 
-humanizeValue (Token "" "dollar") value = "$ " <> Number.format currencyFormatter (toNumber value)
+humanizeValue (Token "" "dollar") value = "$ " <> Number.format (numberFormatter 2) (toNumber value)
 
-humanizeValue (Token _ name) value = Number.format currencyFormatter (toNumber value) <> " " <> name
+humanizeValue (Token _ name) value = Number.format (numberFormatter 0) (toNumber value) <> " " <> name
 
 toAda :: BigInteger -> Number
 toAda lovelace = (toNumber lovelace) / 1000000.0
 
-currencyFormatter :: Number.Formatter
-currencyFormatter =
+numberFormatter :: Int -> Number.Formatter
+numberFormatter decimals =
   Number.Formatter
     { sign: false
     , before: 0
     , comma: true
-    , after: 6
+    , after: decimals
     , abbreviations: false
     }
+
+contractIcon :: forall p a. ContractType -> HTML p a
+contractIcon contractType =
+  img
+    [ src case contractType of
+        Escrow -> purchaseIcon
+        ZeroCouponBond -> loanIcon
+        _ -> cfdIcon
+    ]

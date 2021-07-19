@@ -23,7 +23,7 @@ import           PlutusTx.PIRTypes
 
 import qualified PlutusTx.Builtins             as Builtins
 -- I feel like we shouldn't need this, we only need it to spot the special String type, which is annoying
-import qualified PlutusTx.String               as String
+import qualified PlutusTx.Builtins.Class       as Builtins
 
 import qualified Class                         as GHC
 import qualified FV                            as GHC
@@ -403,7 +403,7 @@ compileExpr e = withContextM 2 (sdToTxt $ "Compiling expr:" GHC.<+> GHC.ppr e) $
     CompileContext {ccScopes=stack,ccBuiltinNameInfo=nameInfo} <- ask
 
     -- TODO: Maybe share this to avoid repeated lookups. Probably cheap, though.
-    (stringTyName, sbsName) <- case (Map.lookup ''Builtins.String nameInfo, Map.lookup 'String.stringToBuiltinString nameInfo) of
+    (stringTyName, sbsName) <- case (Map.lookup ''Builtins.BuiltinString nameInfo, Map.lookup 'Builtins.stringToBuiltinString nameInfo) of
         (Just t1, Just t2) -> pure $ (GHC.getName t1, GHC.getName t2)
         _                  -> throwPlain $ CompilationError "No info for String builtin"
 
@@ -438,6 +438,9 @@ compileExpr e = withContextM 2 (sdToTxt $ "Compiling expr:" GHC.<+> GHC.ppr e) $
         GHC.Var n `GHC.App` GHC.Type _ `GHC.App` arg | GHC.getName n == GHC.noinlineIdName -> compileExpr arg
 
         -- See note [GHC runtime errors]
+        -- <error func> <runtime rep> <overall type> <call stack> <message>
+        GHC.Var (isErrorId -> True) `GHC.App` _ `GHC.App` GHC.Type t `GHC.App` _ `GHC.App` _ ->
+            PIR.TyInst () <$> errorFunc <*> compileTypeNorm t
         -- <error func> <runtime rep> <overall type> <message>
         GHC.Var (isErrorId -> True) `GHC.App` _ `GHC.App` GHC.Type t `GHC.App` _ ->
             PIR.TyInst () <$> errorFunc <*> compileTypeNorm t
@@ -538,7 +541,7 @@ compileExpr e = withContextM 2 (sdToTxt $ "Compiling expr:" GHC.<+> GHC.ppr e) $
                 isPureAlt <- forM dcs $ \dc ->
                     let (_, vars, body) = findAlt dc alts t
                     in if null vars then PIR.isPure (const PIR.NonStrict) <$> compileExpr body else pure True
-                let lazyCase = not $ and isPureAlt
+                let lazyCase = not (and isPureAlt || length dcs == 1)
 
                 match <- getMatchInstantiated scrutineeType
                 let matched = PIR.Apply () match scrutinee'

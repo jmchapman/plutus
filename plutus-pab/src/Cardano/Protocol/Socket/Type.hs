@@ -1,9 +1,9 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DerivingVia           #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
@@ -11,36 +11,45 @@
 module Cardano.Protocol.Socket.Type where
 
 import           Codec.Serialise.Class                              (Serialise)
+import           Control.Monad                                      (forever)
+import           Control.Monad.Class.MonadST                        (MonadST)
+import           Control.Monad.Class.MonadTimer
 import           Crypto.Hash                                        (SHA256, hash)
 import           Data.Aeson                                         (FromJSON, ToJSON)
 import qualified Data.ByteArray                                     as BA
 import qualified Data.ByteString                                    as BS
 import qualified Data.ByteString.Lazy                               as BSL
-import           Data.Default                                       (Default (..))
+import           Data.Map                                           ((!))
 import           Data.Text.Prettyprint.Doc                          (Pretty)
-import           Data.Time.Calendar                                 (fromGregorian)
-import           Data.Time.Clock                                    (UTCTime (..), diffUTCTime, getCurrentTime,
-                                                                     nominalDiffTimeToSeconds, secondsToNominalDiffTime)
-import           Data.Time.Units                                    (Second)
 import           Data.Time.Units.Extra                              ()
-import           Data.Word                                          (Word16)
+import           Data.Void                                          (Void)
 
 import           GHC.Generics
 import           NoThunks.Class                                     (NoThunks)
 
+import           Cardano.Chain.Slotting                             (EpochSlots (..))
 import           Codec.Serialise                                    (DeserialiseFailure)
 import qualified Codec.Serialise                                    as CBOR
 import           Network.TypedProtocol.Codec
+import qualified Ouroboros.Consensus.Byron.Ledger                   as Byron
+import           Ouroboros.Consensus.Cardano.Block                  (CardanoBlock, CodecConfig (..))
+import           Ouroboros.Consensus.Network.NodeToClient           (ClientCodecs, clientCodecs)
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion    (BlockNodeToClientVersion,
+                                                                     supportedNodeToClientVersions)
+import qualified Ouroboros.Consensus.Shelley.Ledger                 as Shelley
+import           Ouroboros.Consensus.Shelley.Protocol               (StandardCrypto)
 import           Ouroboros.Network.Block                            (HeaderHash, Point, StandardHash)
+import           Ouroboros.Network.Magic                            (NetworkMagic (..))
 import           Ouroboros.Network.Mux
+import           Ouroboros.Network.NodeToClient                     (NodeToClientVersion (..),
+                                                                     NodeToClientVersionData (..))
 import qualified Ouroboros.Network.Protocol.ChainSync.Codec         as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Type          as ChainSync
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Codec as TxSubmission
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Type  as TxSubmission
 import           Ouroboros.Network.Util.ShowProxy
 
-import           Ledger                                             (Block, OnChainTx (..), Slot (..), Tx (..),
-                                                                     TxId (..))
+import           Ledger                                             (Block, OnChainTx (..), Tx (..), TxId (..))
 import           Ledger.Bytes                                       (LedgerBytes (..))
 
 -- | Tip of the block chain type (used by node protocols).
@@ -83,67 +92,80 @@ maximumMiniProtocolLimits =
         maximumIngressQueue = maxBound
     }
 
--- | Build an application from a set of protocol numbers and protocols.
-mkApplication
-  :: [ (Word16, RunMiniProtocol appType bytes m a b) ]
-  -> OuroborosApplication appType addr bytes m a b
-mkApplication protocols =
-  OuroborosApplication $ \_connectionId _shoudStomSTM ->
-    map (\(ix, protocol) -> MiniProtocol {
-                             miniProtocolNum = MiniProtocolNum ix,
-                             miniProtocolLimits = maximumMiniProtocolLimits,
-                             miniProtocolRun = protocol
-                            })
-    protocols
+-- | Protocol versions
+nodeToClientVersion :: NodeToClientVersion
+nodeToClientVersion = NodeToClientV_4
 
-chainSyncMiniProtocolNum :: Word16
-chainSyncMiniProtocolNum = 5
+-- | A temporary definition of the protocol version. This will be moved as an
+-- argument to the client connection function in a future PR (the network magic
+-- number matches the one in the test net created by scripts)
+nodeToClientVersionData :: NodeToClientVersionData
+nodeToClientVersionData = NodeToClientVersionData { networkMagic = NetworkMagic 1097911063 }
 
-txSubmissionMiniProtocolNum :: Word16
-txSubmissionMiniProtocolNum = 2
+-- | A protocol client that will never leave the initial state.
+doNothingInitiatorProtocol
+  :: MonadTimer m => RunMiniProtocol 'InitiatorMode BSL.ByteString m a Void
+doNothingInitiatorProtocol =
+    InitiatorProtocolOnly $ MuxPeerRaw $
+    const $ forever $ threadDelay 1e6
+
+doNothingResponderProtocol
+  :: MonadTimer m => RunMiniProtocol 'ResponderMode BSL.ByteString m Void a
+doNothingResponderProtocol =
+  ResponderProtocolOnly $ MuxPeerRaw $
+  const $ forever $ threadDelay 1e6
 
 type Offset = Integer
 
 -- | Boilerplate codecs used for protocol serialisation.
-codecChainSync :: Codec (ChainSync.ChainSync Block (Point Block) Tip)
-                        DeserialiseFailure
-                        IO BSL.ByteString
-codecChainSync =
+
+-- | The number of epochSlots is specific to each blockchain instance. This value
+-- is what the cardano main and testnet uses.
+epochSlots :: EpochSlots
+epochSlots = EpochSlots 432000
+
+codecVersion :: BlockNodeToClientVersion (CardanoBlock StandardCrypto)
+codecVersion = versionMap ! nodeToClientVersion
+  where
+    versionMap =
+      supportedNodeToClientVersions
+        (Proxy @(CardanoBlock StandardCrypto))
+
+codecConfig :: CodecConfig (CardanoBlock StandardCrypto)
+codecConfig =
+  CardanoCodecConfig
+    (Byron.ByronCodecConfig epochSlots)
+    Shelley.ShelleyCodecConfig
+    Shelley.ShelleyCodecConfig
+    Shelley.ShelleyCodecConfig
+    Shelley.ShelleyCodecConfig
+
+nodeToClientCodecs
+  :: forall m. MonadST m
+  => ClientCodecs (CardanoBlock StandardCrypto) m
+nodeToClientCodecs =
+  clientCodecs codecConfig codecVersion nodeToClientVersion
+
+-- | These codecs are currently used in the mock nodes and will
+--   probably soon get removed as the mock nodes are phased out.
+chainSyncCodec
+  :: forall block.
+     ( Serialise block
+     , Serialise (HeaderHash block)
+     )
+  => Codec (ChainSync.ChainSync block (Point block) Tip)
+           DeserialiseFailure
+           IO BSL.ByteString
+chainSyncCodec =
     ChainSync.codecChainSync
       CBOR.encode             CBOR.decode
       CBOR.encode             CBOR.decode
       CBOR.encode             CBOR.decode
 
-codecTxSubmission :: Codec (TxSubmission.LocalTxSubmission Tx String)
+txSubmissionCodec :: Codec (TxSubmission.LocalTxSubmission Tx String)
                            DeserialiseFailure
                            IO BSL.ByteString
-codecTxSubmission =
+txSubmissionCodec =
     TxSubmission.codecLocalTxSubmission
       CBOR.encode CBOR.decode
       CBOR.encode CBOR.decode
-
-data SlotConfig =
-    SlotConfig
-        { scSlotLength   :: Second -- ^ Length of 1 slot
-        , scZeroSlotTime :: UTCTime -- ^ Beginning of the first slot
-        }
-    deriving (Show, Eq, Generic, FromJSON)
-
-instance Default SlotConfig where
-  def =
-    let shelleyLaunchDate =
-          let ninePm = 21 * 60 * 60
-              fourtyFourMinutes = 44 * 60
-          in UTCTime (fromGregorian 2020 07 29) (ninePm + fourtyFourMinutes + 51)
-    in SlotConfig{ scSlotLength = 1, scZeroSlotTime = shelleyLaunchDate }
-
--- | Convert a timestamp to a slot number
-slotNumber :: SlotConfig -> UTCTime -> Slot
-slotNumber SlotConfig{scSlotLength, scZeroSlotTime} currentTime =
-    let timePassed = currentTime `diffUTCTime` scZeroSlotTime
-        slotsPassed = timePassed / (secondsToNominalDiffTime $ fromIntegral scSlotLength)
-    in Slot $ round $ nominalDiffTimeToSeconds slotsPassed
-
--- | Get the current slot number
-currentSlot :: SlotConfig -> IO Slot
-currentSlot sc = slotNumber sc <$> getCurrentTime

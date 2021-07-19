@@ -1,10 +1,10 @@
 module Contract.Lenses
-  ( _tab
+  ( _nickname
+  , _tab
   , _executionState
   , _pendingTransaction
   , _previousSteps
   , _mMarloweParams
-  , _followerAppId
   , _selectedStep
   , _metadata
   , _participants
@@ -19,16 +19,20 @@ import Data.Map (Map)
 import Data.Maybe (Maybe)
 import Data.Set (Set)
 import Data.Symbol (SProxy(..))
-import Marlowe.Execution.Types (ExecutionState, NamedAction)
+import Marlowe.Execution.Types (NamedAction)
+import Marlowe.Execution.Types (State) as Execution
 import Marlowe.Extended.Metadata (MetaData)
-import Marlowe.PAB (PlutusAppId, MarloweParams)
+import Marlowe.PAB (MarloweParams)
 import Marlowe.Semantics (Party, TransactionInput)
 import WalletData.Types (WalletNickname)
+
+_nickname :: Lens' State String
+_nickname = prop (SProxy :: SProxy "nickname")
 
 _tab :: forall a. Lens' { tab :: Tab | a } Tab
 _tab = prop (SProxy :: SProxy "tab")
 
-_executionState :: Lens' State ExecutionState
+_executionState :: Lens' State Execution.State
 _executionState = prop (SProxy :: SProxy "executionState")
 
 _pendingTransaction :: Lens' State (Maybe TransactionInput)
@@ -39,9 +43,6 @@ _previousSteps = prop (SProxy :: SProxy "previousSteps")
 
 _mMarloweParams :: Lens' State (Maybe MarloweParams)
 _mMarloweParams = prop (SProxy :: SProxy "mMarloweParams")
-
-_followerAppId :: Lens' State PlutusAppId
-_followerAppId = prop (SProxy :: SProxy "followerAppId")
 
 _selectedStep :: Lens' State Int
 _selectedStep = prop (SProxy :: SProxy "selectedStep")

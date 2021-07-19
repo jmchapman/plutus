@@ -10,12 +10,12 @@
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:debug-context #-}
 module Spec.MultiSigStateMachine(tests, lockProposeSignPay) where
 
+import           Data.Default                          (Default (def))
 import           Data.Foldable                         (traverse_)
-import           Test.Tasty                            (TestTree, testGroup)
-import qualified Test.Tasty.HUnit                      as HUnit
 
 import qualified Ledger
 import qualified Ledger.Ada                            as Ada
+import qualified Ledger.TimeSlot                       as TimeSlot
 import qualified Ledger.Typed.Scripts                  as Scripts
 import qualified Wallet.Emulator                       as EM
 
@@ -23,7 +23,10 @@ import           Plutus.Contract.Test
 import qualified Plutus.Contracts.MultiSigStateMachine as MS
 import           Plutus.Trace.Emulator                 (EmulatorTrace)
 import qualified Plutus.Trace.Emulator                 as Trace
-import qualified PlutusTx                              as PlutusTx
+import qualified PlutusTx
+
+import           Test.Tasty                            (TestTree, testGroup)
+import qualified Test.Tasty.HUnit                      as HUnit
 
 tests :: TestTree
 tests =
@@ -72,7 +75,7 @@ payment =
     MS.Payment
         { MS.paymentAmount    = Ada.lovelaceValueOf 5
         , MS.paymentRecipient = Ledger.pubKeyHash $ EM.walletPubKey w2
-        , MS.paymentDeadline  = 20
+        , MS.paymentDeadline  = TimeSlot.slotToEndPOSIXTime def 20
         }
 
 -- | Lock some funds in the contract, then propose the payment
