@@ -105,7 +105,7 @@ data Error {n} : n ⊢ → Set where
 ```
 ITel : Builtin → Bwd Label → Set
 
--- I cannot remember why there is both a FValue and a Value...
+-- FValues can appear in an application
 data FValue : 0 ⊢ → Set where
   V-ƛ : (t : suc 0 ⊢)
       → FValue (ƛ t)
@@ -116,10 +116,10 @@ data FValue : 0 ⊢ → Set where
             → ITel b ls
             → (t : 0 ⊢)
             → FValue t
-
+-- Values cannot compute any further
 data Value  : 0 ⊢ → Set where
   V-F     : FValue t → Value t
-  V-delay : Value (delay t)
+  V-delay : Value (delay t) -- t is not a value here?
   V-con   : (tcn : TermCon) → Value (con tcn)
   V-builtin⋆ : (b : Builtin)
             → ∀ {ls ls'}

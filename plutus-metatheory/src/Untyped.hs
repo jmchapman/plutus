@@ -64,16 +64,16 @@ uconvC (UConChar c) = Some (ValueOf DefaultUniChar       c)
 uconvC UConUnit     = Some (ValueOf DefaultUniUnit       ())
 uconvC (UConBool b) = Some (ValueOf DefaultUniBool       b)
 
-tmnames = ['a' .. 'z']
+tmnames = fmap (\ i -> 'x': show i) [0..]
 
 uconv ::  Int -> UTerm -> Term NamedDeBruijn DefaultUni DefaultFun ()
 uconv i (UVar x)     = Var
   ()
-  (NamedDeBruijn (T.pack [tmnames !! (i - 1 - fromIntegral x)])
+  (NamedDeBruijn (T.pack (tmnames !! (i - 1 - fromIntegral x)))
                  (Index (naturalFromInteger x)))
 uconv i (ULambda t)  = LamAbs
   ()
-  (NamedDeBruijn (T.pack [tmnames !! i]) (Index 0))
+  (NamedDeBruijn (T.pack (tmnames !! i)) (Index 0))
   (uconv (i+1) t)
 uconv i (UApp t u)   = Apply () (uconv i t) (uconv i u)
 uconv i (UCon u)     = Constant () (uconvC u)

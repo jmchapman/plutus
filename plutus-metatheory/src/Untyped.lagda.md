@@ -192,17 +192,17 @@ decUTm _ _ = false
 
 ```
 -- look for a variable
-FV : Fin n → n ⊢ → Bool
-FV i (` x) with i Data.Fin.≟ x
-... | yes p = true
-... | no ¬p = false
-FV i (ƛ t) = FV (suc i) t
-FV i (t · u) = FV i t ∨ FV i u
-FV i (force t) = FV i t
-FV i (delay t) = FV i t
-FV i (con c) = false
-FV i (builtin b) = false
-FV i error = false
+occurences : Fin n → n ⊢ → ℕ
+occurences i (` x) with i Data.Fin.≟ x
+... | yes p = 1
+... | no ¬p = 0
+occurences i (ƛ t) = occurences (suc i) t
+occurences i (t · u) = occurences i t Data.Nat.+ occurences i u
+occurences i (force t) = occurences i t
+occurences i (delay t) = occurences i t
+occurences i (con c) = 0
+occurences i (builtin b) = 0
+occurences i error = 0
 
 -- two things, look under a binder and strengthen if we don't find 0
 -- if we find a constant function in an application, swap it for a force/delay.

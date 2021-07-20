@@ -91,6 +91,7 @@ library
     MAlonzo.Code.Data.Empty.Irrelevant
     MAlonzo.Code.Data.Empty.Polymorphic
     MAlonzo.Code.Data.Fin.Base
+    MAlonzo.Code.Data.Fin.Properties    
     MAlonzo.Code.Data.Integer
     MAlonzo.Code.Data.Integer.Base
     MAlonzo.Code.Data.Integer.Properties
@@ -211,7 +212,7 @@ library
     MAlonzo.Code.Algorithmic.Erasure
     MAlonzo.Code.Declarative
     MAlonzo.Code.Untyped
-    MAlonzo.Code.Untyped.Reduction
+    MAlonzo.Code.Untyped.OpenReduction    
     MAlonzo.Code.Untyped.RenamingSubstitution
     MAlonzo.Code.Agda.Builtin.Maybe
     MAlonzo.Code.Algebra.Construct.NaturalChoice.Base
@@ -285,6 +286,7 @@ library
     MAlonzo.Code.Data.Empty.Irrelevant
     MAlonzo.Code.Data.Empty.Polymorphic
     MAlonzo.Code.Data.Fin.Base
+    MAlonzo.Code.Data.Fin.Properties    
     MAlonzo.Code.Data.Integer
     MAlonzo.Code.Data.Integer.Base
     MAlonzo.Code.Data.Integer.Properties
@@ -405,7 +407,7 @@ library
     MAlonzo.Code.Algorithmic.Erasure
     MAlonzo.Code.Declarative
     MAlonzo.Code.Untyped
-    MAlonzo.Code.Untyped.Reduction
+    MAlonzo.Code.Untyped.OpenReduction    
     MAlonzo.Code.Untyped.RenamingSubstitution
     MAlonzo.Code.Agda.Builtin.Maybe
     MAlonzo.Code.Algebra.Construct.NaturalChoice.Base

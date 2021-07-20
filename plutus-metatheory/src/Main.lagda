@@ -29,7 +29,7 @@ open import Scoped.Extrication
 open import Type.BetaNBE
 open import Type.BetaNormal
 open import Untyped as U
-import Untyped.Reduction as U
+import Untyped.OpenReduction as U
 import Scoped as S
 import Scoped.Reduction as S
 open import Raw
@@ -241,7 +241,7 @@ typeCheckPLC : ScopedTm Z → Either TypeError (Σ (∅ ⊢Nf⋆ *) (∅ ⊢_))
 typeCheckPLC t = inferType _ t
 
 
-maxsteps = 10000000000
+maxsteps = 10000
 
 open import Data.String
 
@@ -257,7 +257,7 @@ reportError (runtimeError runtimeTypeError) = "runtimeTypeError"
 executePLC : EvalMode → ScopedTm Z → Either ERROR String
 executePLC U t = do
   (A ,, t) ← withE (λ e → typeError (uglyTypeError e)) $ typeCheckPLC t
-  just t' ← withE runtimeError $ U.progressor 10000000 (erase t)
+  just t' ← withE runtimeError $ U.progressor maxsteps (erase t)
     where nothing → inj₁ (runtimeError userError)
   return $ prettyPrintUTm (extricateU t')
 executePLC TL t = do
@@ -290,10 +290,10 @@ executePLC TCEKV t = do
 
 executeUPLC : 0 ⊢ → Either ERROR String
 executeUPLC t = do
-  just t' ← withE runtimeError $ U.progressor 10000000 t
+  just t' ← withE runtimeError $ U.progressor maxsteps t
     where nothing → inj₁ (runtimeError userError)
   return $ prettyPrintUTm (extricateU t')
-
+  
 evalByteString : EvalMode → ByteString → Either ERROR String
 evalByteString U b = do
   t ← parseUPLC b
@@ -566,13 +566,13 @@ postulate showU : TermU -> String
 
 {-# COMPILE GHC showU = T.pack . show #-}
 
-
+-- this is not used!
 runU : TermU → Either ERROR TermU
 runU t = do
   tDB ← withE scopeError $ U.scopeCheckU {0} (convTmU (D.trace (showU t) t))
   just tR ← withE runtimeError $ U.progressor maxsteps (D.trace (Untyped.ugly tDB) tDB)
     where nothing → inj₂ (unconvTmU UError)
-  return (unconvTmU (extricateU tR))
 
+  return (unconvTmU (extricateU tR))
 {-# COMPILE GHC runU as runUAgda #-}
 \end{code}
