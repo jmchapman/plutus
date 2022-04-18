@@ -69,21 +69,25 @@ tests genOpts@GenOptions{} =
   testGroup "NEAT"
 
   [ bigTest "normalization commutes with conversion from generated types"
-      genOpts {genDepth = 13}
+      genOpts {genDepth = 12}
       (Type ())
       (packAssertion prop_normalizeConvertCommuteTypes)
   , bigTest "normal types cannot reduce"
-      genOpts {genDepth = 14}
+      genOpts {genDepth = 13}
       (Type ())
       (packAssertion prop_normalTypesCannotReduce)
   , bigTest "type preservation - CK"
-      genOpts {genDepth = 18}
+      genOpts {genDepth = 17}
       (TyBuiltinG TyUnitG)
       (packAssertion prop_typePreservation)
-  , bigTest "typed CK vs untyped CEK produce the same output"
+{-  , bigTest "typed CK vs untyped CEK produce the same output"
+      genOpts {genDepth = 17}
+      (TyBuiltinG TyUnitG)
+      (packAssertion prop_agree_termEval) -}
+  , _mapTest
       genOpts {genDepth = 18}
       (TyBuiltinG TyUnitG)
-      (packAssertion prop_agree_termEval)
+      (\t a -> testCase (show a) ((packAssertion prop_agree_termEval) t a))
   ]
 
 
@@ -453,6 +457,6 @@ packAssertion f t a =
 bigTest :: (Check t a, Enumerable a)
         => String -> GenOptions -> t -> (t -> a -> Assertion) -> TestTree
 bigTest s GenOptions{..} t f = testCaseInfo s $ do
-  as <- search' genMode genDepth (\a ->  check t a)
+  as <- search' genMode genDepth (check t)
   _  <- traverse (f t) as
   return $ show (length as)
